@@ -27,14 +27,26 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          cmdline-tools-version: 11076708_latest
-          packages: 'platforms;android-34 build-tools;34.0.0'
+          cmdline-tools-version: '12.0'
+
+      - name: Accept SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install required SDK components
+        run: |
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jiujiuwo-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Build Release APK (if keystore available)
         if: env.KEYSTORE_BASE64 != ''
@@ -46,12 +58,6 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
           ./gradlew assembleRelease
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: jiujiuwo-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload Release APK
         if: env.KEYSTORE_BASE64 != ''
