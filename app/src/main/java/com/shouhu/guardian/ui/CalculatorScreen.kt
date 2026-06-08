@@ -50,11 +50,7 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
             contentAlignment = Alignment.CenterEnd
         ) {
             Text(
-                text = when {
-                    emergencyTriggered -> "!!!"
-                    else -> displayText.ifEmpty { "0" }
-                    else -> displayText
-                },
+                text = if (emergencyTriggered) "!!!" else displayText.ifEmpty { "0" },
                 fontSize = 48.sp,
                 color = if (emergencyTriggered) Color(0xFFE53935) else Color.White,
                 fontWeight = FontWeight.Light,
