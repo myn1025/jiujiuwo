@@ -326,7 +326,7 @@ fun SettingsPanel(onLogout: () -> Unit) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("⚙️ 触发方式", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     SwitchRow("长按音量键", "锁屏时长按音量-触发", triggerVolume) { triggerVolume = it }
-                    SwitchRow("语音唤醒", "喊"紫守护救命"触发", triggerVoice) { triggerVoice = it }
+                    SwitchRow("语音唤醒", "喊'紫守护救命'触发", triggerVoice) { triggerVoice = it }
                 }
             }
 

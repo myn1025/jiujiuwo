@@ -52,7 +52,7 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
             Text(
                 text = when {
                     emergencyTriggered -> "!!!"
-                    displayText.ifEmpty { "0" } -> displayText.ifEmpty { "0" }
+                    else -> displayText.ifEmpty { "0" }
                     else -> displayText
                 },
                 fontSize = 48.sp,
