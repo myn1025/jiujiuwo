@@ -20,8 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shouhu.guardian.data.api.RetrofitClient
-import com.shouhu.guardian.data.model.LoginRequest
-import com.shouhu.guardian.data.model.RegisterRequest
+import com.shouhu.guardian.data.model.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -31,6 +31,9 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
     var isRegister by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
+    var verificationCode by remember { mutableStateOf("") }
+    var codeSent by remember { mutableStateOf(false) }
+    var codeCountdown by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -53,7 +56,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Logo 区域
+            // Logo
             Text(
                 text = "救 救 我",
                 fontSize = 32.sp,
@@ -68,7 +71,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 modifier = Modifier.padding(bottom = 40.dp)
             )
 
-            // 输入框
+            // 邮箱
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it.trim(); errorMsg = null },
@@ -83,6 +86,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             )
             Spacer(modifier = Modifier.height(12.dp))
 
+            // 密码
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it; errorMsg = null },
@@ -98,16 +102,19 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             )
 
             if (isRegister) {
+                // 昵称
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("昵称") },
+                    label = { Text("昵称（用于登录）") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = darkFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // 手机号
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = phone,
@@ -116,12 +123,76 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Phone,
-                        imeAction = ImeAction.Done
+                        imeAction = ImeAction.Next
                     ),
-                    keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
                     colors = darkFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // 验证码
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = verificationCode,
+                        onValueChange = { verificationCode = it; errorMsg = null },
+                        label = { Text("验证码") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                        colors = darkFieldColors(),
+                        modifier = Modifier.weight(1f),
+                        enabled = codeSent
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            if (email.isBlank()) {
+                                errorMsg = "请先输入邮箱"
+                                return@Button
+                            }
+                            scope.launch {
+                                try {
+                                    loading = true
+                                    errorMsg = null
+                                    val resp = RetrofitClient.apiService.sendVerificationCode(SendCodeRequest(email))
+                                    if (resp.isSuccessful && resp.body()?.success == true) {
+                                        codeSent = true
+                                        codeCountdown = 60
+                                        launch {
+                                            while (codeCountdown > 0) {
+                                                delay(1000)
+                                                codeCountdown--
+                                            }
+                                            codeCountdown = 0
+                                        }
+                                    } else {
+                                        errorMsg = resp.body()?.message ?: "发送验证码失败"
+                                    }
+                                } catch (e: Exception) {
+                                    errorMsg = "网络错误: ${e.message}"
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (codeCountdown > 0) Color(0xFF3A2A5A) else Color(0xFF7C3AED)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = codeCountdown == 0 && !loading
+                    ) {
+                        Text(
+                            if (codeCountdown > 0) "${codeCountdown}s" else "获取验证码",
+                            fontSize = 13.sp
+                        )
+                    }
+                }
             }
 
             // 错误提示
@@ -134,24 +205,38 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             Spacer(modifier = Modifier.height(24.dp))
             Button(
                 onClick = {
-                    if (email.isBlank() || password.length < 6) {
-                        errorMsg = "邮箱不能为空，密码至少6位"
-                        return@Button
+                    if (email.isBlank()) {
+                        errorMsg = "请输入邮箱"; return@Button
                     }
-                    loading = true
-                    errorMsg = null
+                    if (isRegister) {
+                        if (password.length < 8) {
+                            errorMsg = "密码至少8位"; return@Button
+                        }
+                        if (username.isBlank()) {
+                            errorMsg = "请输入昵称"; return@Button
+                        }
+                        if (verificationCode.isBlank()) {
+                            errorMsg = "请先获取并输入验证码"; return@Button
+                        }
+                    } else {
+                        if (password.length < 1) {
+                            errorMsg = "请输入密码"; return@Button
+                        }
+                    }
+                    loading = true; errorMsg = null
                     scope.launch {
                         try {
                             if (isRegister) {
                                 val resp = RetrofitClient.apiService.register(
-                                    RegisterRequest(email, password, username.ifEmpty { null }, phone.ifEmpty { null })
+                                    RegisterRequest(email, password, username, verificationCode, phone.ifEmpty { null })
                                 )
                                 if (resp.isSuccessful && resp.body() != null) {
                                     val data = resp.body()!!
                                     RetrofitClient.setToken(data.accessToken)
                                     onLoginSuccess(data.accessToken, data.email)
                                 } else {
-                                    errorMsg = "注册失败: ${resp.message()}"
+                                    val err = resp.errorBody()?.string() ?: resp.message()
+                                    errorMsg = "注册失败: $err"
                                 }
                             } else {
                                 val resp = RetrofitClient.apiService.login(LoginRequest(email, password))
@@ -185,11 +270,10 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 }
             }
 
-            // 切换登录/注册
+            // 切换
             Spacer(modifier = Modifier.height(16.dp))
             TextButton(onClick = {
-                isRegister = !isRegister
-                errorMsg = null
+                isRegister = !isRegister; errorMsg = null
             }) {
                 Text(
                     if (isRegister) "已有账号？去登录" else "没有账号？立即注册",
@@ -200,14 +284,3 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
         }
     }
 }
-
-@Composable
-private fun darkFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color(0xFFE0D8F0),
-    cursorColor = Color(0xFF7C3AED),
-    focusedBorderColor = Color(0xFF7C3AED),
-    unfocusedBorderColor = Color(0xFF2A1A3A),
-    focusedLabelColor = Color(0xFF7C3AED),
-    unfocusedLabelColor = Color(0xFF8878A0)
-)
