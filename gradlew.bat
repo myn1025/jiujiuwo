@@ -12,8 +12,6 @@ set APP_HOME=%DIRNAME%
 @rem Resolve any "." and ".." in APP_HOME to make it shorter.
 for %%i in ("%APP_HOME%") do set APP_HOME=%%~fi
 
-set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
-
 set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
 
 @rem Find java.exe
@@ -33,11 +31,11 @@ goto fail
 @rem Setup the command line
 set GRADLE_OPTS=%GRADLE_OPTS% -Dorg.gradle.appname=%APP_BASE_NAME%
 
-"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+"%JAVA_EXE%" -Xmx64m -Xms64m %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :end
 @rem End local scope for the variables with windows NT shell
-if %OS%=="Windows_NT" endlocal
+if %OS%"=="Windows_NT" endlocal
 
 :omega
 
