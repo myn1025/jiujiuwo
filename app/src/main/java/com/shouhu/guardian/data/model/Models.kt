@@ -21,43 +21,62 @@ data class AuthResponse(
     val group: String = "default"
 )
 
-data class EmergencyContact(val id: Int? = null, val name: String, val phone: String, val order: Int = 0)
+// ====== 联系人 ======
+data class ContactRequest(
+    val name: String,
+    val phone: String,
+    val relation: String? = null,
+    val priority: Int = 1
+)
+data class ContactResponse(
+    val id: Int,
+    val name: String,
+    val phone: String,
+    val relation: String?,
+    val priority: Int
+)
 
-data class LocationData(
+// ====== 报警 ======
+data class EmergencyRequest(
     val latitude: Double,
     val longitude: Double,
     val address: String? = null,
-    val timestamp: Long? = null
+    @SerializedName("device_info") val deviceInfo: Map<String, String>? = null
+)
+data class ContactNotified(
+    @SerializedName("contact_name") val contactName: String,
+    @SerializedName("contact_phone") val contactPhone: String,
+    @SerializedName("sms_sent") val smsSent: Boolean,
+    @SerializedName("call_made") val callMade: Boolean
+)
+data class EmergencyResponse(
+    val id: Int,
+    val latitude: Double,
+    val longitude: Double,
+    val address: String?,
+    val status: String,
+    @SerializedName("triggered_at") val triggeredAt: String,
+    @SerializedName("resolved_at") val resolvedAt: String?,
+    @SerializedName("contacts_notified") val contactsNotified: List<ContactNotified>
 )
 
-data class EmergencyEvent(
-    val id: Int? = null,
-    @SerializedName("user_id") val userId: Int? = null,
-    @SerializedName("event_type") val eventType: String = "manual",
-    val status: String = "active",
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-    val address: String? = null,
-    @SerializedName("audio_url") val audioUrl: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null,
-    @SerializedName("resolved_at") val resolvedAt: String? = null
+// ====== 设置 ======
+data class SettingsResponse(
+    @SerializedName("safe_password") val safePassword: String,
+    @SerializedName("trigger_volume_key") val triggerVolumeKey: Boolean,
+    @SerializedName("trigger_voice") val triggerVoice: Boolean,
+    @SerializedName("trigger_widget") val triggerWidget: Boolean,
+    @SerializedName("auto_record") val autoRecord: Boolean,
+    @SerializedName("auto_gps") val autoGps: Boolean
 )
-
-data class GuardianSettings(
-    val id: Int? = null,
-    @SerializedName("auto_record_seconds") val autoRecordSeconds: Int = 30,
-    @SerializedName("auto_call_enabled") val autoCallEnabled: Boolean = true,
-    @SerializedName("voice_wake_enabled") val voiceWakeEnabled: Boolean = false,
-    @SerializedName("fake_call_enabled") val fakeCallEnabled: Boolean = false,
-    @SerializedName("trigger_methods_raw") val triggerMethodsRaw: String = "volume_long_press",
+data class SettingsUpdateRequest(
     @SerializedName("safe_password") val safePassword: String? = null,
-    @SerializedName("auto_report_interval") val autoReportInterval: Int = 300
+    @SerializedName("trigger_volume_key") val triggerVolumeKey: Boolean? = null,
+    @SerializedName("trigger_voice") val triggerVoice: Boolean? = null,
+    @SerializedName("trigger_widget") val triggerWidget: Boolean? = null,
+    @SerializedName("auto_record") val autoRecord: Boolean? = null,
+    @SerializedName("auto_gps") val autoGps: Boolean? = null
 )
 
-data class ApiResponse<T>(
-    val success: Boolean,
-    val message: String? = null,
-    val data: T? = null
-)
-
-data class ErrorResponse(val detail: String)
+// ====== 通用 ======
+data class ApiError(val detail: String)

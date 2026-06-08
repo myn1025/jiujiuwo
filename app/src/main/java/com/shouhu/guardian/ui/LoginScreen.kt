@@ -56,7 +56,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Logo
+            // Logo 区域
             Text(
                 text = "救 救 我",
                 fontSize = 32.sp,
@@ -164,6 +164,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                                     if (resp.isSuccessful && resp.body()?.success == true) {
                                         codeSent = true
                                         codeCountdown = 60
+                                        // 倒计时
                                         launch {
                                             while (codeCountdown > 0) {
                                                 delay(1000)
@@ -206,24 +207,30 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             Button(
                 onClick = {
                     if (email.isBlank()) {
-                        errorMsg = "请输入邮箱"; return@Button
+                        errorMsg = "请输入邮箱"
+                        return@Button
                     }
                     if (isRegister) {
                         if (password.length < 8) {
-                            errorMsg = "密码至少8位"; return@Button
+                            errorMsg = "密码至少8位"
+                            return@Button
                         }
                         if (username.isBlank()) {
-                            errorMsg = "请输入昵称"; return@Button
+                            errorMsg = "请输入昵称"
+                            return@Button
                         }
                         if (verificationCode.isBlank()) {
-                            errorMsg = "请先获取并输入验证码"; return@Button
+                            errorMsg = "请先获取并输入验证码"
+                            return@Button
                         }
                     } else {
                         if (password.length < 1) {
-                            errorMsg = "请输入密码"; return@Button
+                            errorMsg = "请输入密码"
+                            return@Button
                         }
                     }
-                    loading = true; errorMsg = null
+                    loading = true
+                    errorMsg = null
                     scope.launch {
                         try {
                             if (isRegister) {
@@ -270,10 +277,11 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 }
             }
 
-            // 切换
+            // 切换登录/注册
             Spacer(modifier = Modifier.height(16.dp))
             TextButton(onClick = {
-                isRegister = !isRegister; errorMsg = null
+                isRegister = !isRegister
+                errorMsg = null
             }) {
                 Text(
                     if (isRegister) "已有账号？去登录" else "没有账号？立即注册",
@@ -284,3 +292,14 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
         }
     }
 }
+
+@Composable
+private fun darkFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = Color.White,
+    unfocusedTextColor = Color(0xFFE0D8F0),
+    cursorColor = Color(0xFF7C3AED),
+    focusedBorderColor = Color(0xFF7C3AED),
+    unfocusedBorderColor = Color(0xFF2A1A3A),
+    focusedLabelColor = Color(0xFF7C3AED),
+    unfocusedLabelColor = Color(0xFF8878A0)
+)
