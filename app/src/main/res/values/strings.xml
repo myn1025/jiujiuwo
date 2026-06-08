@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">救救我</string>
+    <string name="calculator_hint">请输入…</string>
+    <string name="emergency_notification_title">救救我</string>
+    <string name="emergency_notification_text">正在发送求救信号…</string>
+    <string name="location_notification_text">定位服务运行中</string>
+    <string name="permission_location_rationale">需要位置权限才能发送你的位置给紧急联系人</string>
+    <string name="permission_sms_rationale">需要短信权限才能给紧急联系人发送求救短信</string>
+    <string name="permission_phone_rationale">需要电话权限才能拨打紧急联系人</string>
+    <string name="permission_mic_rationale">需要录音权限才能录制现场声音</string>
+</resources>
