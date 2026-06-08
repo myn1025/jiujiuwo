@@ -87,6 +87,9 @@ dependencies {
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
+    // 闪屏
+    implementation("androidx.core:core-splashscreen:1.0.1")
+
     // 高德地图定位 SDK
     implementation("com.amap.api:location:6.4.7")
 
