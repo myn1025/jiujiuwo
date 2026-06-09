@@ -1,6 +1,9 @@
 package com.shouhu.guardian.ui
 
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import com.shouhu.guardian.ui.theme.isDarkMode
+import com.shouhu.guardian.ui.theme.setDarkMode
 
 /**
  * 应用根导航
@@ -13,14 +16,16 @@ import androidx.compose.runtime.*
  */
 @Composable
 fun AppRoot() {
-    // 应用状态
+    val context = LocalContext.current
     var screen by remember { mutableStateOf<Screen>(Screen.Calculator) }
     var authToken by remember { mutableStateOf<String?>(null) }
     var userEmail by remember { mutableStateOf("") }
+    var darkMode by remember { mutableStateOf(isDarkMode(context)) }
 
     when (screen) {
         Screen.Calculator -> {
             CalculatorScreen(
+                darkTheme = darkMode,
                 onUnlocked = { screen = Screen.Login }
             )
         }
@@ -37,6 +42,11 @@ fun AppRoot() {
             GuardianMainScreen(
                 token = authToken!!,
                 email = userEmail,
+                darkTheme = darkMode,
+                onToggleTheme = { dark ->
+                    darkMode = dark
+                    setDarkMode(context, dark)
+                },
                 onLogout = {
                     authToken = null
                     userEmail = ""

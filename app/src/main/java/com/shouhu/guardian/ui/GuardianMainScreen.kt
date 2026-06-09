@@ -21,6 +21,70 @@ import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import kotlinx.coroutines.launch
 
+// 主题感知色板
+private data class AppColors(
+    val background: Color,
+    val surface: Color,
+    val surfaceVariant: Color,
+    val onBackground: Color,
+    val onSurface: Color,
+    val onSurfaceVariant: Color,
+    val primary: Color,
+    val primaryContainer: Color,
+    val topBarBg: Color,
+    val topBarTitle: Color,
+    val navBarBg: Color,
+    val selectedColor: Color,
+    val unselectedColor: Color,
+    val cardBg: Color,
+    val white: Color,
+    val divider: Color,
+    val errorColor: Color,
+    val successColor: Color,
+)
+
+private val DarkColors = AppColors(
+    background = Color(0xFF0F0C12),
+    surface = Color(0xFF1A1525),
+    surfaceVariant = Color(0xFF2A1A3A),
+    onBackground = Color(0xFF8878A0),
+    onSurface = Color.White,
+    onSurfaceVariant = Color(0xFF8878A0),
+    primary = Color(0xFF7C3AED),
+    primaryContainer = Color(0xFF2A1A3A),
+    topBarBg = Color(0xFF1A1525),
+    topBarTitle = Color(0xFF7C3AED),
+    navBarBg = Color(0xFF1A1525),
+    selectedColor = Color(0xFF7C3AED),
+    unselectedColor = Color(0xFF8878A0),
+    cardBg = Color(0xFF1A1525),
+    white = Color.White,
+    divider = Color(0xFF2A1A3A),
+    errorColor = Color(0xFFE53935),
+    successColor = Color(0xFF4CAF50),
+)
+
+private val LightColors = AppColors(
+    background = Color(0xFFF5F3FA),
+    surface = Color.White,
+    surfaceVariant = Color(0xFFF3E8FF),
+    onBackground = Color(0xFF666666),
+    onSurface = Color(0xFF1A1A1A),
+    onSurfaceVariant = Color(0xFF666666),
+    primary = Color(0xFF7C3AED),
+    primaryContainer = Color(0xFFF3E8FF),
+    topBarBg = Color.White,
+    topBarTitle = Color(0xFF7C3AED),
+    navBarBg = Color.White,
+    selectedColor = Color(0xFF7C3AED),
+    unselectedColor = Color(0xFF999999),
+    cardBg = Color.White,
+    white = Color.White,
+    divider = Color(0xFFE8E0F0),
+    errorColor = Color(0xFFE53935),
+    successColor = Color(0xFF4CAF50),
+)
+
 /**
  * 救救我 - 主界面
  *
@@ -28,7 +92,14 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GuardianMainScreen(token: String, email: String, onLogout: () -> Unit) {
+fun GuardianMainScreen(
+    token: String,
+    email: String,
+    darkTheme: Boolean,
+    onToggleTheme: (Boolean) -> Unit,
+    onLogout: () -> Unit
+) {
+    val c = if (darkTheme) DarkColors else LightColors
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("联系人" to Icons.Default.People, "报警记录" to Icons.Default.Warning, "设置" to Icons.Default.Settings)
 
@@ -37,18 +108,18 @@ fun GuardianMainScreen(token: String, email: String, onLogout: () -> Unit) {
             TopAppBar(
                 title = { Text("救救我", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1525),
-                    titleContentColor = Color(0xFF7C3AED)
+                    containerColor = c.topBarBg,
+                    titleContentColor = c.topBarTitle
                 ),
                 actions = {
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.Default.ExitToApp, "退出", tint = Color(0xFF8878A0))
+                        Icon(Icons.Default.ExitToApp, "退出", tint = c.unselectedColor)
                     }
                 }
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = Color(0xFF1A1525)) {
+            NavigationBar(containerColor = c.navBarBg) {
                 tabs.forEachIndexed { index, (title, icon) ->
                     NavigationBarItem(
                         selected = selectedTab == index,
@@ -56,23 +127,23 @@ fun GuardianMainScreen(token: String, email: String, onLogout: () -> Unit) {
                         icon = { Icon(icon, title) },
                         label = { Text(title, fontSize = 12.sp) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color(0xFF7C3AED),
-                            selectedTextColor = Color(0xFF7C3AED),
-                            indicatorColor = Color(0xFF2A1A3A),
-                            unselectedIconColor = Color(0xFF8878A0),
-                            unselectedTextColor = Color(0xFF8878A0)
+                            selectedIconColor = c.selectedColor,
+                            selectedTextColor = c.selectedColor,
+                            indicatorColor = c.primaryContainer,
+                            unselectedIconColor = c.unselectedColor,
+                            unselectedTextColor = c.unselectedColor
                         )
                     )
                 }
             }
         },
-        containerColor = Color(0xFF0F0C12)
+        containerColor = c.background
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                0 -> ContactsPanel()
-                1 -> AlertsPanel()
-                2 -> SettingsPanel(onLogout)
+                0 -> ContactsPanel(c)
+                1 -> AlertsPanel(c)
+                2 -> SettingsPanel(c, onLogout, darkTheme, onToggleTheme)
             }
         }
     }
@@ -80,7 +151,7 @@ fun GuardianMainScreen(token: String, email: String, onLogout: () -> Unit) {
 
 // ====== 联系人面板 ======
 @Composable
-fun ContactsPanel() {
+fun ContactsPanel(c: AppColors) {
     var contacts by remember { mutableStateOf<List<ContactResponse>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var showDialog by remember { mutableStateOf(false) }
@@ -106,7 +177,7 @@ fun ContactsPanel() {
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text("添加紧急联系人", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("添加紧急联系人", fontWeight = FontWeight.Bold, color = c.onSurface) },
             text = {
                 Column {
                     OutlinedTextField(
@@ -114,11 +185,7 @@ fun ContactsPanel() {
                         label = { Text("姓名") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
-                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
-                        )
+                        colors = fieldColors(c)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -126,11 +193,7 @@ fun ContactsPanel() {
                         label = { Text("手机号") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
-                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
-                        )
+                        colors = fieldColors(c)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -138,14 +201,10 @@ fun ContactsPanel() {
                         label = { Text("关系（选填）") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
-                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
-                        )
+                        colors = fieldColors(c)
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("优先级", color = Color(0xFF8878A0), fontSize = 12.sp)
+                    Text("优先级", color = c.onSurfaceVariant, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (i in 1..5) {
                             FilterChip(
@@ -153,8 +212,8 @@ fun ContactsPanel() {
                                 onClick = { priority = i },
                                 label = { Text("$i") },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF7C3AED),
-                                    selectedLabelColor = Color.White
+                                    selectedContainerColor = c.primary,
+                                    selectedLabelColor = c.white
                                 )
                             )
                         }
@@ -176,15 +235,15 @@ fun ContactsPanel() {
                         }
                     },
                     enabled = name.isNotBlank() && phone.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                    colors = ButtonDefaults.buttonColors(containerColor = c.primary)
                 ) { Text("添加") }
             },
             dismissButton = {
                 TextButton(onClick = { showDialog = false }) {
-                    Text("取消", color = Color(0xFF8878A0))
+                    Text("取消", color = c.onSurfaceVariant)
                 }
             },
-            containerColor = Color(0xFF1A1525)
+            containerColor = c.surface
         )
     }
 
@@ -196,21 +255,21 @@ fun ContactsPanel() {
                 .fillMaxWidth()
                 .padding(16.dp)
                 .height(48.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+            colors = ButtonDefaults.buttonColors(containerColor = c.primary),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Icon(Icons.Default.Add, null, tint = Color.White)
+            Icon(Icons.Default.Add, null, tint = c.white)
             Spacer(modifier = Modifier.width(8.dp))
             Text("添加紧急联系人", fontWeight = FontWeight.Bold)
         }
 
         if (loading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color(0xFF7C3AED))
+                CircularProgressIndicator(color = c.primary)
             }
         } else if (contacts.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("还没有紧急联系人", color = Color(0xFF8878A0), fontSize = 15.sp)
+                Text("还没有紧急联系人", color = c.onSurfaceVariant, fontSize = 15.sp)
             }
         } else {
             LazyColumn(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -219,7 +278,7 @@ fun ContactsPanel() {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1525)),
+                        colors = CardDefaults.cardColors(containerColor = c.cardBg),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
@@ -230,22 +289,22 @@ fun ContactsPanel() {
                         ) {
                             Icon(
                                 Icons.Default.Person, null,
-                                tint = Color(0xFF7C3AED),
+                                tint = c.primary,
                                 modifier = Modifier.size(36.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(contact.name, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                Text(contact.phone, color = Color(0xFF8878A0), fontSize = 13.sp)
+                                Text(contact.name, color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text(contact.phone, color = c.onSurfaceVariant, fontSize = 13.sp)
                             }
                             Surface(
-                                color = Color(0xFFFFD54F).copy(alpha = 0.2f),
+                                color = c.primary.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
                                     "#${contact.priority}",
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    color = Color(0xFFFFD54F),
+                                    color = c.primary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -260,7 +319,7 @@ fun ContactsPanel() {
 
 // ====== 报警记录面板 ======
 @Composable
-fun AlertsPanel() {
+fun AlertsPanel(c: AppColors) {
     var alerts by remember { mutableStateOf<List<EmergencyResponse>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
@@ -275,11 +334,11 @@ fun AlertsPanel() {
 
     if (loading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color(0xFF7C3AED))
+            CircularProgressIndicator(color = c.primary)
         }
     } else if (alerts.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("暂无报警记录", color = Color(0xFF8878A0), fontSize = 15.sp)
+            Text("暂无报警记录", color = c.onSurfaceVariant, fontSize = 15.sp)
         }
     } else {
         LazyColumn(modifier = Modifier.padding(16.dp)) {
@@ -288,7 +347,7 @@ fun AlertsPanel() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1525)),
+                    colors = CardDefaults.cardColors(containerColor = c.cardBg),
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Row(modifier = Modifier.padding(16.dp)) {
@@ -296,24 +355,24 @@ fun AlertsPanel() {
                         Surface(
                             modifier = Modifier.size(8.dp),
                             shape = RoundedCornerShape(4.dp),
-                            color = if (alert.status == "active") Color(0xFFE53935) else Color(0xFF4CAF50)
+                            color = if (alert.status == "active") c.errorColor else c.successColor
                         ) {}
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
                                 alert.address ?: "未知位置",
-                                color = Color.White,
+                                color = c.onSurface,
                                 fontSize = 15.sp
                             )
                             Text(
                                 formatTime(alert.triggeredAt),
-                                color = Color(0xFF8878A0),
+                                color = c.onSurfaceVariant,
                                 fontSize = 12.sp,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                             Text(
                                 if (alert.status == "active") "⚠ 报警中" else "✅ 已取消",
-                                color = if (alert.status == "active") Color(0xFFE53935) else Color(0xFF4CAF50),
+                                color = if (alert.status == "active") c.errorColor else c.successColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -333,7 +392,12 @@ private fun formatTime(iso: String): String {
 
 // ====== 设置面板 ======
 @Composable
-fun SettingsPanel(onLogout: () -> Unit) {
+fun SettingsPanel(
+    c: AppColors,
+    onLogout: () -> Unit,
+    darkTheme: Boolean,
+    onToggleTheme: (Boolean) -> Unit
+) {
     var safePassword by remember { mutableStateOf("2580") }
     var triggerVolume by remember { mutableStateOf(true) }
     var triggerVoice by remember { mutableStateOf(true) }
@@ -359,16 +423,33 @@ fun SettingsPanel(onLogout: () -> Unit) {
     }
 
     LazyColumn(modifier = Modifier.padding(16.dp)) {
+        // ========== 外观设置 ==========
         item {
-            // 安全密码
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1525)),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🔑 安全密码", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("取消报警 / 停止伪装界面时使用", color = Color(0xFF8878A0), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    Text("🎨 外观", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    SwitchRow(c, "深色模式", "切换深色/浅色主题", darkTheme) {
+                        onToggleTheme(it)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            // 安全密码
+            Card(
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("🔑 安全密码", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("取消报警 / 停止伪装界面时使用", color = c.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     OutlinedTextField(
                         value = safePassword,
                         onValueChange = { if (it.length <= 4) safePassword = it },
@@ -381,12 +462,7 @@ fun SettingsPanel(onLogout: () -> Unit) {
                             letterSpacing = 16.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF7C3AED),
-                            unfocusedBorderColor = Color(0xFF2A1A3A)
-                        )
+                        colors = fieldColors(c)
                     )
                     Button(
                         onClick = {
@@ -401,7 +477,7 @@ fun SettingsPanel(onLogout: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                        colors = ButtonDefaults.buttonColors(containerColor = c.primary)
                     ) { Text("保存") }
                 }
             }
@@ -410,19 +486,19 @@ fun SettingsPanel(onLogout: () -> Unit) {
 
             // 触发方式
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1525)),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("⚙️ 触发方式", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    SwitchRow("长按音量键", "锁屏时长按音量-触发", triggerVolume) {
+                    Text("⚙️ 触发方式", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    SwitchRow(c, "长按音量键", "锁屏时长按音量-触发", triggerVolume) {
                         triggerVolume = it
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = it)) } catch (_: Exception) {}
                         }
                     }
-                    SwitchRow("语音唤醒", "喊'紫守护救命'触发", triggerVoice) {
+                    SwitchRow(c, "语音唤醒", "喊'紫守护救命'触发", triggerVoice) {
                         triggerVoice = it
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = it)) } catch (_: Exception) {}
@@ -435,19 +511,19 @@ fun SettingsPanel(onLogout: () -> Unit) {
 
             // 报警行为
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1525)),
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🎙️ 报警行为", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    SwitchRow("自动录音", "报警时录制环境声音", autoRecord) {
+                    Text("🎙️ 报警行为", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    SwitchRow(c, "自动录音", "报警时录制环境声音", autoRecord) {
                         autoRecord = it
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(autoRecord = it)) } catch (_: Exception) {}
                         }
                     }
-                    SwitchRow("发送位置", "报警时附带GPS位置", autoGps) {
+                    SwitchRow(c, "发送位置", "报警时附带GPS位置", autoGps) {
                         autoGps = it
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(autoGps = it)) } catch (_: Exception) {}
@@ -462,9 +538,9 @@ fun SettingsPanel(onLogout: () -> Unit) {
             OutlinedButton(
                 onClick = onLogout,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE53935)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = c.errorColor),
                 border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = Brush.verticalGradient(listOf(Color(0xFFE53935), Color(0xFFE53935)))
+                    brush = Brush.verticalGradient(listOf(c.errorColor, c.errorColor))
                 )
             ) { Text("退出登录") }
         }
@@ -472,7 +548,7 @@ fun SettingsPanel(onLogout: () -> Unit) {
 }
 
 @Composable
-private fun SwitchRow(title: String, desc: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
+private fun SwitchRow(c: AppColors, title: String, desc: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -480,13 +556,23 @@ private fun SwitchRow(title: String, desc: String, checked: Boolean, onToggle: (
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 14.sp)
-            Text(desc, color = Color(0xFF8878A0), fontSize = 11.sp)
+            Text(title, color = c.onSurface, fontSize = 14.sp)
+            Text(desc, color = c.onSurfaceVariant, fontSize = 11.sp)
         }
         Switch(
             checked = checked,
             onCheckedChange = onToggle,
-            colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF7C3AED))
+            colors = SwitchDefaults.colors(checkedTrackColor = c.primary)
         )
     }
 }
+
+@Composable
+private fun fieldColors(c: AppColors) = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = c.onSurface,
+    unfocusedTextColor = c.onSurface,
+    focusedLabelColor = c.primary,
+    unfocusedLabelColor = c.onSurfaceVariant,
+    focusedBorderColor = c.primary,
+    unfocusedBorderColor = c.divider
+)

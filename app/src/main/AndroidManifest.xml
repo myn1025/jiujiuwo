@@ -77,5 +77,27 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
+        <!-- 音量键触发服务 (AccessibilityService) -->
+        <service
+            android:name=".service.VolumeKeyService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- 蓝牙耳机按键接收器 -->
+        <receiver
+            android:name=".service.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
     </application>
 </manifest>

@@ -93,6 +93,9 @@ dependencies {
     // 高德地图定位 SDK
     implementation("com.amap.api:location:6.4.7")
 
+    // Google Play Services 定位（备用）
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
 

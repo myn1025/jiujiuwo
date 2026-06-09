@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  * 连续输错 3 次 → 静默触发报警（调用 API）。
  */
 @Composable
-fun CalculatorScreen(onUnlocked: () -> Unit) {
+fun CalculatorScreen(darkTheme: Boolean = false, onUnlocked: () -> Unit) {
     var displayText by remember { mutableStateOf("") }
     var inputBuffer by remember { mutableStateOf("") }
     var errorCount by remember { mutableIntStateOf(0) }
@@ -32,11 +32,15 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     val SAFE_PIN = "2580"
+    val bgColor = if (darkTheme) Color(0xFF1C1C1E) else Color(0xFFF2F2F7)
+    val displayColor = if (darkTheme) Color.White else Color(0xFF1A1A1A)
+    val numKeyColor = if (darkTheme) Color(0xFF505050) else Color(0xFFD1D1D6)
+    val numTextColor = if (darkTheme) Color.White else Color(0xFF1A1A1A)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1C1C1E))
+            .background(bgColor)
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Bottom
@@ -52,7 +56,7 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
             Text(
                 text = if (emergencyTriggered) "!!!" else displayText.ifEmpty { "0" },
                 fontSize = 48.sp,
-                color = if (emergencyTriggered) Color(0xFFE53935) else Color.White,
+                color = if (emergencyTriggered) Color(0xFFE53935) else displayColor,
                 fontWeight = FontWeight.Light,
                 textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth()
@@ -81,6 +85,7 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
                     CalcButton(
                         label = label,
                         modifier = Modifier.weight(1f),
+                        darkTheme = darkTheme,
                         onClick = {
                             when {
                                 label == "=" -> {
@@ -93,7 +98,6 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
                                         if (errorCount >= 3 && !emergencyTriggered) {
                                             emergencyTriggered = true
                                             displayText = "!!!"
-                                            // 静默触发报警（后台协程，不阻塞UI）
                                             scope.launch {
                                                 triggerSilentEmergency()
                                             }
@@ -129,13 +133,22 @@ fun CalculatorScreen(onUnlocked: () -> Unit) {
 private fun RowScope.CalcButton(
     label: String,
     modifier: Modifier = Modifier,
+    darkTheme: Boolean = false,
     onClick: () -> Unit
 ) {
+    val orangeColor = Color(0xFFFF9500)
+    val redColor = Color(0xFFD32F2F)
+    val numBg = if (darkTheme) Color(0xFF505050) else Color(0xFFD1D1D6)
+    val numText = if (darkTheme) Color.White else Color(0xFF1A1A1A)
     val bgColor = when (label) {
-        "C" -> Color(0xFFD32F2F)
-        "=" -> Color(0xFFFF9500)
-        "÷", "×", "−", "+" -> Color(0xFFFF9500)
-        else -> Color(0xFF505050)
+        "C" -> redColor
+        "=" -> orangeColor
+        "÷", "×", "−", "+" -> orangeColor
+        else -> numBg
+    }
+    val textColor = when (label) {
+        "C", "=", "÷", "×", "−", "+" -> Color.White
+        else -> numText
     }
     Box(
         modifier = modifier
@@ -150,7 +163,7 @@ private fun RowScope.CalcButton(
             text = label,
             fontSize = 24.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White
+            color = textColor
         )
     }
 }
