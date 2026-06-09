@@ -2,145 +2,191 @@ package com.shouhu.guardian.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import com.shouhu.guardian.ui.MainActivity
 
-/**
- * 音量键触发服务 - AccessibilityService
- *
- * 拦截音量键事件，检测长按（≥3秒）触发报警。
- * 锁屏下也能接收按键事件。
- */
 class VolumeKeyService : AccessibilityService() {
 
+    private val handler = Handler(Looper.getMainLooper())
+    private val LONG_PRESS_MS = 2000L
+    private var longPressRunnable: Runnable? = null
     private var volumeDownPressed = false
     private var volumeUpPressed = false
-    private var downPressTime = 0L
-    private var upPressTime = 0L
-    private var emergencyTriggered = false
-    private val handler = Handler(Looper.getMainLooper())
-    private val LONG_PRESS_MS = 2000L // 长按阈值 2 秒
-    private var longPressRunnable: Runnable? = null
+    private var triggered = false
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 不需要处理屏幕事件，只处理按键
+        // 必须实现此方法，否则部分 ROM 不会分派按键事件
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        val action = event.action
         val keyCode = event.keyCode
 
-        // 只处理音量键
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
-            return super.onKeyEvent(event)
-        }
-
-        when (event.action) {
-            KeyEvent.ACTION_DOWN -> {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        if (!volumeDownPressed) {
-                            volumeDownPressed = true
-                            downPressTime = event.eventTime
-                            Log.d(TAG, "音量- 按下")
-                        }
-                    }
-                    KeyEvent.KEYCODE_VOLUME_UP -> {
-                        if (!volumeUpPressed) {
-                            volumeUpPressed = true
-                            upPressTime = event.eventTime
-                            Log.d(TAG, "音量+ 按下")
-                        }
-                    }
-                }
-
-                // 同侧连按检测（单键连续触发，最常见的使用方式）
-                if (volumeDownPressed || volumeUpPressed) {
-                    // 开始长按计时
-                    val pressTime = if (volumeDownPressed) downPressTime else upPressTime
-                    longPressRunnable?.let { handler.removeCallbacks(it) }
-                    longPressRunnable = Runnable {
-                        if ((volumeDownPressed || volumeUpPressed) && !emergencyTriggered) {
-                            Log.w(TAG, "⚡ 音量键长按 ${LONG_PRESS_MS / 1000}秒 → 触发报警！")
-                            triggerEmergency()
-                        }
-                    }
-                    handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS)
-                }
-
-                // 双键同时按（音量+和音量-同时按住）→ 立即触发（最高优先级）
-                if (volumeDownPressed && volumeUpPressed) {
-                    longPressRunnable?.let { handler.removeCallbacks(it) }
-                    if (!emergencyTriggered) {
-                        Log.w(TAG, "⚡ 音量键同时按下 → 立即触发报警！")
-                        triggerEmergency()
-                    }
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (action == KeyEvent.ACTION_DOWN) {
+                    volumeDownPressed = true
+                    startLongPressTimer()
+                    Log.d(TAG, "🔽 音量- 按下")
+                } else if (action == KeyEvent.ACTION_UP) {
+                    volumeDownPressed = false
+                    cancelLongPressTimer()
+                    Log.d(TAG, "🔽 音量- 释放")
                 }
             }
-
-            KeyEvent.ACTION_UP -> {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        volumeDownPressed = false
-                    }
-                    KeyEvent.KEYCODE_VOLUME_UP -> {
-                        volumeUpPressed = false
-                    }
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (action == KeyEvent.ACTION_DOWN) {
+                    volumeUpPressed = true
+                    startLongPressTimer()
+                    Log.d(TAG, "🔼 音量+ 按下")
+                } else if (action == KeyEvent.ACTION_UP) {
+                    volumeUpPressed = false
+                    cancelLongPressTimer()
+                    Log.d(TAG, "🔼 音量+ 释放")
                 }
-                // 取消长按计时
-                longPressRunnable?.let { handler.removeCallbacks(it) }
-                longPressRunnable = null
             }
         }
 
-        // 只在追踪长按期间消费事件（阻止音量调节），其他时候放行
-        return (volumeDownPressed || volumeUpPressed)
+        // 双键同时按 → 立即触发
+        if (volumeDownPressed && volumeUpPressed) {
+            Log.i(TAG, "⚡ 双键同时按下 → 触发！")
+            triggerAlert()
+            return true
+        }
+
+        // 单键长按中 → 消耗事件，阻止系统调整音量
+        return volumeDownPressed || volumeUpPressed
     }
 
-    private fun triggerEmergency() {
-        emergencyTriggered = true
+    private fun startLongPressTimer() {
+        if (triggered) return
+        longPressRunnable?.let { handler.removeCallbacks(it) }
+        longPressRunnable = Runnable {
+            if (volumeDownPressed || volumeUpPressed) {
+                Log.i(TAG, "⏰ 长按 ${LONG_PRESS_MS}ms → 触发！")
+                triggerAlert()
+            }
+        }
+        handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS)
+    }
+
+    private fun cancelLongPressTimer() {
+        longPressRunnable?.let { handler.removeCallbacks(it) }
+        longPressRunnable = null
+    }
+
+    private fun triggerAlert() {
+        if (triggered) return
+        triggered = true
+
+        // 🔔 振动反馈
+        vibrate()
+
+        // 启动报警服务
         val intent = Intent(this, EmergencyService::class.java).apply {
             action = EmergencyService.ACTION_TRIGGER
-            putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "volume_key")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startService(intent)
 
-        // 2秒后重置状态，允许再次触发
-        handler.postDelayed({
-            emergencyTriggered = false
-        }, 2000)
+        Log.i(TAG, "🚨 报警已触发")
+        handler.postDelayed({ triggered = false }, 5000) // 5 秒冷却
     }
 
-    override fun onInterrupt() {
-        Log.d(TAG, "AccessibilityService 被中断")
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        longPressRunnable?.let { handler.removeCallbacks(it) }
+    private fun vibrate() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vm.defaultVibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                val v = getSystemService(VIBRATOR_SERVICE) as Vibrator
+                v.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
 
-        // 必须在代码中动态设置 serviceInfo，XML 中的 canRequestFilterKeyEvents
-        // 在部分国产 ROM（小米/OPPO/vivo 等）上不可靠
         val info = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
                 AccessibilityServiceInfo.DEFAULT
             notificationTimeout = 100
+            // 不读屏幕、不模拟点击（权限最小化）
         }
         serviceInfo = info
 
-        Log.i(TAG, "音量键监听服务已启动 ✅ — FLAG_REQUEST_FILTER_KEY_EVENTS 已设置")
-        Log.i(TAG, "  单键长按 ≥${LONG_PRESS_MS / 1000}秒 → 触发报警")
-        Log.i(TAG, "  双键同时按 → 立即触发")
-        Log.i(TAG, "  锁屏下也生效")
+        // 前台通知，提高存活率（无障碍服务无需 foregroundServiceType）
+        showNotification()
+
+        Log.i(TAG, "✅ 音量键监听已启动 (FLAG_REQUEST_FILTER_KEY_EVENTS)")
+        Log.i(TAG, "   长按≥${LONG_PRESS_MS / 1000}秒 / 双键同时→触发")
+    }
+
+    private fun showNotification() {
+        val channelId = "volume_key_service"
+        val channelName = "按键监听"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW).apply {
+                description = "紫守护按键触发服务"
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, channelId)
+                .setContentTitle("紫守护")
+                .setContentText("按键唤醒已就绪")
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("紫守护")
+                .setContentText("按键唤醒已就绪")
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .build()
+        }
+
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(1001, notification)
+    }
+
+    override fun onInterrupt() {
+        Log.w(TAG, "⚠️ 服务被中断")
+    }
+
+    override fun onDestroy() {
+        cancelLongPressTimer()
+        Log.i(TAG, "❌ 音量键监听服务已停止")
+        super.onDestroy()
     }
 
     companion object {

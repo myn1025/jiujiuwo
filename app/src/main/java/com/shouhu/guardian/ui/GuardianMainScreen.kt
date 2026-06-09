@@ -15,9 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import com.shouhu.guardian.service.VolumeKeyService
@@ -411,16 +414,17 @@ fun SettingsPanel(
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
+    // ===== 页面加载时检测无障碍 + 加载设置 =====
     LaunchedEffect(Unit) {
-        // 检测无障碍服务状态
         accessibilityEnabled = AccessibilityUtils.isAccessibilityEnabled(context, VolumeKeyService::class.java)
         try {
             val resp = RetrofitClient.apiService.getSettings()
             if (resp.isSuccessful) {
                 resp.body()?.let { s ->
                     safePassword = s.safePassword
-                    triggerVolume = s.triggerVolumeKey
+                    triggerVolume = s.triggerVolumeKey && accessibilityEnabled
                     triggerVoice = s.triggerVoice
                     autoRecord = s.autoRecord
                     autoGps = s.autoGps
@@ -428,6 +432,25 @@ fun SettingsPanel(
             }
         } catch (_: Exception) {}
         loaded = true
+    }
+
+    // ===== 从无障碍设置页返回时重新检测 =====
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val enabled = AccessibilityUtils.isAccessibilityEnabled(context, VolumeKeyService::class.java)
+                accessibilityEnabled = enabled
+                if (!enabled && triggerVolume) {
+                    // 无障碍被关掉 → 自动关闭按键唤醒
+                    triggerVolume = false
+                    scope.launch {
+                        try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = false)) } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LazyColumn(modifier = Modifier.padding(16.dp)) {
