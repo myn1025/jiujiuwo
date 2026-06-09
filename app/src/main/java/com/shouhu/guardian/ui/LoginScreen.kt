@@ -30,7 +30,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
     var password by remember { mutableStateOf("") }
     var isRegister by remember { mutableStateOf(false) }
     var username by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
     var codeSent by remember { mutableStateOf(false) }
     var codeCountdown by remember { mutableStateOf(0) }
@@ -102,27 +102,28 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             )
 
             if (isRegister) {
-                // 昵称
+                // 用户名
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = username,
-                    onValueChange = { username = it },
-                    label = { Text("昵称（用于登录）") },
+                    onValueChange = { username = it; errorMsg = null },
+                    label = { Text("用户名（登录名）") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     colors = darkFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // 手机号
+                // 确认密码
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("手机号（选填）") },
+                    value = confirmPassword,
+                    onValueChange = { confirmPassword = it; errorMsg = null },
+                    label = { Text("确认密码") },
                     singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Phone,
+                        keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Next
                     ),
                     colors = darkFieldColors(),
@@ -164,7 +165,6 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                                     if (resp.isSuccessful && resp.body()?.success == true) {
                                         codeSent = true
                                         codeCountdown = 60
-                                        // 倒计时
                                         launch {
                                             while (codeCountdown > 0) {
                                                 delay(1000)
@@ -211,12 +211,16 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                         return@Button
                     }
                     if (isRegister) {
+                        if (username.isBlank()) {
+                            errorMsg = "请输入用户名"
+                            return@Button
+                        }
                         if (password.length < 8) {
                             errorMsg = "密码至少8位"
                             return@Button
                         }
-                        if (username.isBlank()) {
-                            errorMsg = "请输入昵称"
+                        if (confirmPassword != password) {
+                            errorMsg = "两次密码输入不一致"
                             return@Button
                         }
                         if (verificationCode.isBlank()) {
@@ -235,7 +239,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                         try {
                             if (isRegister) {
                                 val resp = RetrofitClient.apiService.register(
-                                    RegisterRequest(email, password, username, verificationCode, phone.ifEmpty { null })
+                                    RegisterRequest(email, password, username, verificationCode)
                                 )
                                 if (resp.isSuccessful && resp.body() != null) {
                                     val data = resp.body()!!

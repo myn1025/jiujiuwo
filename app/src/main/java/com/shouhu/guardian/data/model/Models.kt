@@ -10,8 +10,7 @@ data class RegisterRequest(
     val email: String,
     val password: String,
     val username: String,
-    @SerializedName("verification_code") val verificationCode: String,
-    val phone: String? = null
+    @SerializedName("verification_code") val verificationCode: String
 )
 data class AuthResponse(
     @SerializedName("access_token") val accessToken: String,
