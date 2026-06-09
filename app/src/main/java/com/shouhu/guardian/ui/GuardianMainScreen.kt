@@ -14,11 +14,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
+import com.shouhu.guardian.service.VolumeKeyService
+import com.shouhu.guardian.util.AccessibilityUtils
 import kotlinx.coroutines.launch
 
 // 主题感知色板
@@ -399,14 +402,19 @@ fun SettingsPanel(
     onToggleTheme: (Boolean) -> Unit
 ) {
     var safePassword by remember { mutableStateOf("2580") }
-    var triggerVolume by remember { mutableStateOf(true) }
-    var triggerVoice by remember { mutableStateOf(true) }
+    var triggerVolume by remember { mutableStateOf(false) }
+    var triggerVoice by remember { mutableStateOf(false) }
     var autoRecord by remember { mutableStateOf(true) }
     var autoGps by remember { mutableStateOf(true) }
+    var accessibilityEnabled by remember { mutableStateOf(false) }
+    var showAccessibilityDialog by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
+        // 检测无障碍服务状态
+        accessibilityEnabled = AccessibilityUtils.isAccessibilityEnabled(context, VolumeKeyService::class.java)
         try {
             val resp = RetrofitClient.apiService.getSettings()
             if (resp.isSuccessful) {
@@ -492,10 +500,24 @@ fun SettingsPanel(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("⚙️ 触发方式", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    SwitchRow(c, "长按音量键", "锁屏时长按音量-触发", triggerVolume) {
-                        triggerVolume = it
-                        scope.launch {
-                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = it)) } catch (_: Exception) {}
+                    // 无障碍状态提示
+                    if (!accessibilityEnabled) {
+                        Text(
+                            "⚠️ 按键唤醒需要开启「无障碍服务」，请先开启后再使用",
+                            color = Color(0xFFF59E0B),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                    SwitchRow(c, "长按音量键", "锁屏时长按音量键 2 秒触发报警", triggerVolume) { wantOn ->
+                        if (wantOn && !accessibilityEnabled) {
+                            // 未开启无障碍 → 弹出引导对话框
+                            showAccessibilityDialog = true
+                        } else {
+                            triggerVolume = wantOn
+                            scope.launch {
+                                try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = wantOn)) } catch (_: Exception) {}
+                            }
                         }
                     }
                     SwitchRow(c, "语音唤醒", "喊'紫守护救命'触发", triggerVoice) {
@@ -544,6 +566,32 @@ fun SettingsPanel(
                 )
             ) { Text("退出登录") }
         }
+    }
+
+    // ====== 无障碍引导对话框 ======
+    if (showAccessibilityDialog) {
+        AlertDialog(
+            onDismissRequest = { showAccessibilityDialog = false },
+            title = { Text("开启按键唤醒") },
+            text = {
+                Text(
+                    "长按音量键触发报警需要启用「无障碍服务」。\n\n" +
+                    "我们只会检测按键事件，\n" +
+                    "不会读取屏幕内容，不会控制屏幕。\n\n" +
+                    "请点击下方按钮前往设置页面，\n" +
+                    "在「已安装的服务」中找到「紫守护」并开启。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showAccessibilityDialog = false
+                    AccessibilityUtils.openAccessibilitySettings(context)
+                }) { Text("前往设置") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAccessibilityDialog = false }) { Text("取消") }
+            }
+        )
     }
 }
 

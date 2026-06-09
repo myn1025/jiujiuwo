@@ -9,5 +9,5 @@
     <string name="permission_sms_rationale">需要短信权限才能给紧急联系人发送求救短信</string>
     <string name="permission_phone_rationale">需要电话权限才能拨打紧急联系人</string>
     <string name="permission_mic_rationale">需要录音权限才能录制现场声音</string>
-    <string name="accessibility_service_description">紫守护音量键触发服务。开启后，长按音量键3秒即可触发紧急求救。无需查看屏幕，锁屏下也能使用。</string>
+    <string name="accessibility_service_description">仅用于检测音量键长按触发紧急求救，不读取屏幕内容，不模拟点击。锁屏下也能触发。</string>
 </resources>

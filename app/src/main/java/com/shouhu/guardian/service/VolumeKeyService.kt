@@ -23,7 +23,7 @@ class VolumeKeyService : AccessibilityService() {
     private var upPressTime = 0L
     private var emergencyTriggered = false
     private val handler = Handler(Looper.getMainLooper())
-    private val LONG_PRESS_MS = 3000L // 长按阈值
+    private val LONG_PRESS_MS = 2000L // 长按阈值 2 秒
     private var longPressRunnable: Runnable? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -132,6 +132,7 @@ class VolumeKeyService : AccessibilityService() {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+                or AccessibilityServiceInfo.DEFAULT
             notificationTimeout = 100
         }
         serviceInfo = info
