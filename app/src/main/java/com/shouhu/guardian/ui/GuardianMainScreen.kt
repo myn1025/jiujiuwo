@@ -83,6 +83,11 @@ fun GuardianMainScreen(token: String, email: String, onLogout: () -> Unit) {
 fun ContactsPanel() {
     var contacts by remember { mutableStateOf<List<ContactResponse>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var showDialog by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var relation by remember { mutableStateOf("") }
+    var priority by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
 
     fun load() {
@@ -97,10 +102,96 @@ fun ContactsPanel() {
 
     LaunchedEffect(Unit) { load() }
 
+    // 添加联系人弹窗
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("添加紧急联系人", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it },
+                        label = { Text("姓名") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
+                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = phone, onValueChange = { phone = it },
+                        label = { Text("手机号") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
+                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = relation, onValueChange = { relation = it },
+                        label = { Text("关系（选填）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                            focusedLabelColor = Color(0xFF7C3AED), unfocusedLabelColor = Color(0xFF8878A0),
+                            focusedBorderColor = Color(0xFF7C3AED), unfocusedBorderColor = Color(0xFF2A1A3A)
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("优先级", color = Color(0xFF8878A0), fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (i in 1..5) {
+                            FilterChip(
+                                selected = priority == i,
+                                onClick = { priority = i },
+                                label = { Text("$i") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF7C3AED),
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            try {
+                                RetrofitClient.apiService.addContact(
+                                    ContactRequest(name, phone, relation.ifBlank { null }, priority)
+                                )
+                                showDialog = false
+                                name = ""; phone = ""; relation = ""; priority = 1
+                                load()
+                            } catch (_: Exception) {}
+                        }
+                    },
+                    enabled = name.isNotBlank() && phone.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                ) { Text("添加") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("取消", color = Color(0xFF8878A0))
+                }
+            },
+            containerColor = Color(0xFF1A1525)
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 添加按钮
         Button(
-            onClick = { /* TODO: 弹窗添加联系人 */ },
+            onClick = { showDialog = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
@@ -325,8 +416,18 @@ fun SettingsPanel(onLogout: () -> Unit) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("⚙️ 触发方式", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    SwitchRow("长按音量键", "锁屏时长按音量-触发", triggerVolume) { triggerVolume = it }
-                    SwitchRow("语音唤醒", "喊'紫守护救命'触发", triggerVoice) { triggerVoice = it }
+                    SwitchRow("长按音量键", "锁屏时长按音量-触发", triggerVolume) {
+                        triggerVolume = it
+                        scope.launch {
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = it)) } catch (_: Exception) {}
+                        }
+                    }
+                    SwitchRow("语音唤醒", "喊'紫守护救命'触发", triggerVoice) {
+                        triggerVoice = it
+                        scope.launch {
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = it)) } catch (_: Exception) {}
+                        }
+                    }
                 }
             }
 
@@ -340,8 +441,18 @@ fun SettingsPanel(onLogout: () -> Unit) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("🎙️ 报警行为", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    SwitchRow("自动录音", "报警时录制环境声音", autoRecord) { autoRecord = it }
-                    SwitchRow("发送位置", "报警时附带GPS位置", autoGps) { autoGps = it }
+                    SwitchRow("自动录音", "报警时录制环境声音", autoRecord) {
+                        autoRecord = it
+                        scope.launch {
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(autoRecord = it)) } catch (_: Exception) {}
+                        }
+                    }
+                    SwitchRow("发送位置", "报警时附带GPS位置", autoGps) {
+                        autoGps = it
+                        scope.launch {
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(autoGps = it)) } catch (_: Exception) {}
+                        }
+                    }
                 }
             }
 
