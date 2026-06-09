@@ -1,6 +1,7 @@
 package com.shouhu.guardian.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
@@ -124,7 +125,21 @@ class VolumeKeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.i(TAG, "音量键监听服务已启动 ✅ — 锁屏下也生效")
+
+        // 必须在代码中动态设置 serviceInfo，XML 中的 canRequestFilterKeyEvents
+        // 在部分国产 ROM（小米/OPPO/vivo 等）上不可靠
+        val info = AccessibilityServiceInfo().apply {
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
+            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            notificationTimeout = 100
+        }
+        serviceInfo = info
+
+        Log.i(TAG, "音量键监听服务已启动 ✅ — FLAG_REQUEST_FILTER_KEY_EVENTS 已设置")
+        Log.i(TAG, "  单键长按 ≥${LONG_PRESS_MS / 1000}秒 → 触发报警")
+        Log.i(TAG, "  双键同时按 → 立即触发")
+        Log.i(TAG, "  锁屏下也生效")
     }
 
     companion object {
