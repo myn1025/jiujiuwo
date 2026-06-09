@@ -22,7 +22,7 @@ import com.shouhu.guardian.data.model.*
 import kotlinx.coroutines.launch
 
 // 主题感知色板
-private data class AppColors(
+data class AppColors(
     val background: Color,
     val surface: Color,
     val surfaceVariant: Color,
