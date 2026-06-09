@@ -22,8 +22,6 @@ import com.shouhu.guardian.ui.theme.isDarkMode
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 强制关闭系统原生标题栏（防双标题栏）
-        supportActionBar?.hide()
         val darkMode = isDarkMode(this)
         setContent {
             var dark by remember { mutableStateOf(darkMode) }

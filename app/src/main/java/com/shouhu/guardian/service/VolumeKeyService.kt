@@ -131,8 +131,8 @@ class VolumeKeyService : AccessibilityService() {
         val info = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPES_ALL_MASK
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
-                or AccessibilityServiceInfo.DEFAULT
+            flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+                AccessibilityServiceInfo.DEFAULT
             notificationTimeout = 100
         }
         serviceInfo = info
