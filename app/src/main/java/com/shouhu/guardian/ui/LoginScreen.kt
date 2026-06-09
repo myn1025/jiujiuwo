@@ -26,11 +26,11 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
-    var email by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isRegister by remember { mutableStateOf(false) }
-    var username by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var verificationCode by remember { mutableStateOf("") }
     var codeSent by remember { mutableStateOf(false) }
     var codeCountdown by remember { mutableStateOf(0) }
@@ -56,7 +56,7 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Logo 区域
+            // Logo
             Text(
                 text = "救 救 我",
                 fontSize = 32.sp,
@@ -71,16 +71,13 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 modifier = Modifier.padding(bottom = 40.dp)
             )
 
-            // 邮箱
+            // 用户名（登录和注册都用）
             OutlinedTextField(
-                value = email,
-                onValueChange = { email = it.trim(); errorMsg = null },
-                label = { Text("邮箱") },
+                value = username,
+                onValueChange = { username = it; errorMsg = null },
+                label = { Text("用户名") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next
-                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 colors = darkFieldColors(),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -102,18 +99,6 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
             )
 
             if (isRegister) {
-                // 用户名
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it; errorMsg = null },
-                    label = { Text("用户名（登录名）") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    colors = darkFieldColors(),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
                 // 确认密码
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -124,6 +109,21 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Next
+                    ),
+                    colors = darkFieldColors(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // 邮箱
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it.trim(); errorMsg = null },
+                    label = { Text("邮箱") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next
                     ),
                     colors = darkFieldColors(),
@@ -202,19 +202,15 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                 Text(it, color = Color(0xFFE53935), fontSize = 13.sp)
             }
 
-            // 按钮
+            // 主按钮
             Spacer(modifier = Modifier.height(24.dp))
             Button(
                 onClick = {
-                    if (email.isBlank()) {
-                        errorMsg = "请输入邮箱"
+                    if (username.isBlank()) {
+                        errorMsg = "请输入用户名"
                         return@Button
                     }
                     if (isRegister) {
-                        if (username.isBlank()) {
-                            errorMsg = "请输入用户名"
-                            return@Button
-                        }
                         if (password.length < 8) {
                             errorMsg = "密码至少8位"
                             return@Button
@@ -223,12 +219,16 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                             errorMsg = "两次密码输入不一致"
                             return@Button
                         }
+                        if (email.isBlank()) {
+                            errorMsg = "请输入邮箱"
+                            return@Button
+                        }
                         if (verificationCode.isBlank()) {
                             errorMsg = "请先获取并输入验证码"
                             return@Button
                         }
                     } else {
-                        if (password.length < 1) {
+                        if (password.isBlank()) {
                             errorMsg = "请输入密码"
                             return@Button
                         }
@@ -250,14 +250,14 @@ fun LoginScreen(onLoginSuccess: (String, String) -> Unit) {
                                     errorMsg = "注册失败: $err"
                                 }
                             } else {
-                                val resp = RetrofitClient.apiService.login(LoginRequest(email, password))
+                                val resp = RetrofitClient.apiService.login(LoginRequest(username, password))
                                 if (resp.isSuccessful && resp.body() != null) {
                                     val data = resp.body()!!
                                     RetrofitClient.setToken(data.accessToken)
                                     onLoginSuccess(data.accessToken, data.email)
                                 } else {
                                     val err = resp.errorBody()?.string() ?: resp.message()
-                                    errorMsg = if (resp.code() == 401) "邮箱或密码错误" else "登录失败: $err"
+                                    errorMsg = if (resp.code() == 401) "用户名或密码错误" else "登录失败: $err"
                                 }
                             }
                         } catch (e: Exception) {

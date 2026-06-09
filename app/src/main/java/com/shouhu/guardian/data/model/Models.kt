@@ -3,7 +3,7 @@ package com.shouhu.guardian.data.model
 import com.google.gson.annotations.SerializedName
 
 // ====== 认证 ======
-data class LoginRequest(val email: String, val password: String)
+data class LoginRequest(val username: String, val password: String)
 data class SendCodeRequest(val email: String)
 data class SendCodeResponse(val message: String, val success: Boolean)
 data class RegisterRequest(
