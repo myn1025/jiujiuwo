@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 闪屏主题 - 必须设置 NoActionBar 防标题栏残留 -->
+    <!-- 闪屏主题 - installSplashScreen() + title="" 已在代码层消除标题栏 -->
     <style name="Theme.JiuJiuWo.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/dark_background</item>
         <item name="postSplashScreenTheme">@style/Theme.JiuJiuWo</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="windowActionBar">false</item>
-        <item name="windowNoTitle">true</item>
     </style>
 
     <!-- 主主题 (NoActionBar + NoTitle，彻底防双标题栏) -->
