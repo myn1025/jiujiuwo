@@ -160,15 +160,22 @@ class EmergencyService : Service() {
                 }
             }
 
-            // 请求单次定位
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED
-            ) {
-                locationManager?.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper())
-                // 5秒超时
+            // 请求单次定位 — 先 GPS 后网络
+            val hasFine = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            val hasCoarse = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            if (hasFine || hasCoarse) {
+                // 先请求 GPS（有精细权限时）
+                if (hasFine) {
+                    locationManager?.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper())
+                }
+                // 同时请求网络定位作为兜底
+                if (hasCoarse) {
+                    locationManager?.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, listener, Looper.getMainLooper())
+                }
+                // 8秒超时
                 handler.postDelayed({
                     if (!resumed) { resumed = true; cont.resume(null) {} }
-                }, 5000L)
+                }, 8000L)
             } else {
                 Log.e(TAG, "缺少定位权限")
                 cont.resume(null) {}
@@ -205,14 +212,6 @@ class EmergencyService : Service() {
         var successCount = 0
         var failCount = 0
         try {
-            // 检查权限
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                Log.e(TAG, "❌ 缺少 SEND_SMS 权限")
-                return "短信权限未授予"
-            }
-
             val resp = RetrofitClient.apiService.getContacts()
             if (!resp.isSuccessful) return "获取联系人失败"
             val contacts = resp.body() ?: return "联系人列表为空"

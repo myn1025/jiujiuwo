@@ -101,20 +101,7 @@ fun LoginScreen(
             // Biometric login button
             if (hasBiometric) {
                 OutlinedButton(
-                    onClick = {
-                        showBiometric = true
-                        if (context is FragmentActivity) {
-                            BiometricAuthUtils.authenticate(
-                                activity = context as FragmentActivity,
-                                onSuccess = {
-                                    RetrofitClient.setToken(savedToken!!)
-                                    onLoginSuccess(savedToken!!, "")
-                                },
-                                onError = { error -> errorMsg = "验证失败: $error" },
-                                onFallback = {}
-                            )
-                        }
-                    },
+                    onClick = { showBiometric = true },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF7C3AED)),
                     shape = RoundedCornerShape(12.dp),

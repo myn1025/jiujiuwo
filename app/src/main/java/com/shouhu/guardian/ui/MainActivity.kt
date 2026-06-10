@@ -27,6 +27,10 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { }
 
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -35,6 +39,7 @@ class MainActivity : ComponentActivity() {
         // 请求运行时权限
         requestNotificationPermission()
         requestSmsPermission()
+        requestLocationPermission()
 
         val darkMode = isDarkMode(this)
         setContent {
@@ -65,6 +70,23 @@ class MainActivity : ComponentActivity() {
             != PackageManager.PERMISSION_GRANTED
         ) {
             smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+        }
+    }
+
+    private fun requestLocationPermission() {
+        val missing = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            missing.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (missing.isNotEmpty()) {
+            locationPermissionLauncher.launch(missing.toTypedArray())
         }
     }
 }

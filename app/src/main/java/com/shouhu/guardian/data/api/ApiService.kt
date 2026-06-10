@@ -36,6 +36,12 @@ interface ApiService {
     @GET("emergency/history")
     suspend fun getAlertHistory(@Query("limit") limit: Int = 30): Response<List<EmergencyResponse>>
 
+    @DELETE("emergency/{id}")
+    suspend fun deleteAlert(@Path("id") id: Int): Response<Unit>
+
+    @PUT("emergency/{id}/cancel")
+    suspend fun cancelAlert(@Path("id") id: Int, @Query("password") password: String): Response<Map<String, String>>
+
     // ====== 设置 ======
     @GET("settings/")
     suspend fun getSettings(): Response<SettingsResponse>

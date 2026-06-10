@@ -334,14 +334,111 @@ fun ContactsPanel(c: AppColors) {
 fun AlertsPanel(c: AppColors) {
     var alerts by remember { mutableStateOf<List<EmergencyResponse>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var cancelAlertId by remember { mutableStateOf<Int?>(null) }
+    var cancelPassword by remember { mutableStateOf("") }
+    var cancelError by remember { mutableStateOf<String?>(null) }
+    var deleteAlertId by remember { mutableStateOf<Int?>(null) }
+    var actionLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        try {
-            val resp = RetrofitClient.apiService.getAlertHistory(30)
-            if (resp.isSuccessful) alerts = resp.body() ?: emptyList()
-        } catch (_: Exception) {}
-        loading = false
+    // 加载报警记录
+    fun loadAlerts() {
+        scope.launch {
+            loading = true
+            try {
+                val resp = RetrofitClient.apiService.getAlertHistory(30)
+                if (resp.isSuccessful) alerts = resp.body() ?: emptyList()
+            } catch (_: Exception) {}
+            loading = false
+        }
+    }
+
+    LaunchedEffect(Unit) { loadAlerts() }
+
+    // 取消报警确认对话框
+    if (cancelAlertId != null) {
+        AlertDialog(
+            onDismissRequest = { cancelAlertId = null; cancelPassword = ""; cancelError = null },
+            title = { Text("取消报警") },
+            text = {
+                Column {
+                    Text("请输入安全密码以取消报警（默认2580）", fontSize = 14.sp)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = cancelPassword,
+                        onValueChange = { cancelPassword = it; cancelError = null },
+                        label = { Text("安全密码") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (cancelError != null) {
+                        Text(cancelError!!, color = Color(0xFFEF4444), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            actionLoading = true
+                            try {
+                                val resp = RetrofitClient.apiService.cancelAlert(
+                                    cancelAlertId!!,
+                                    password = cancelPassword.ifBlank { "2580" }
+                                )
+                                if (resp.isSuccessful) {
+                                    cancelAlertId = null
+                                    cancelPassword = ""
+                                    cancelError = null
+                                    loadAlerts()
+                                } else {
+                                    cancelError = "密码错误或取消失败"
+                                }
+                            } catch (e: Exception) {
+                                cancelError = "网络错误: ${e.message}"
+                            }
+                            actionLoading = false
+                        }
+                    },
+                    enabled = !actionLoading
+                ) { Text("确认取消") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelAlertId = null; cancelPassword = ""; cancelError = null }) {
+                    Text("返回")
+                }
+            }
+        )
+    }
+
+    // 删除确认对话框
+    if (deleteAlertId != null) {
+        AlertDialog(
+            onDismissRequest = { deleteAlertId = null },
+            title = { Text("删除记录") },
+            text = { Text("确定要删除这条报警记录吗？此操作不可撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            actionLoading = true
+                            try {
+                                val resp = RetrofitClient.apiService.deleteAlert(deleteAlertId!!)
+                                if (resp.isSuccessful) {
+                                    deleteAlertId = null
+                                    loadAlerts()
+                                }
+                            } catch (_: Exception) {}
+                            actionLoading = false
+                        }
+                    },
+                    enabled = !actionLoading
+                ) { Text("删除", color = Color(0xFFEF4444)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteAlertId = null }) { Text("取消") }
+            }
+        )
     }
 
     if (loading) {
@@ -362,7 +459,10 @@ fun AlertsPanel(c: AppColors) {
                     colors = CardDefaults.cardColors(containerColor = c.cardBg),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Row(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         // 状态指示灯
                         Surface(
                             modifier = Modifier.size(8.dp),
@@ -370,7 +470,7 @@ fun AlertsPanel(c: AppColors) {
                             color = if (alert.status == "active") c.errorColor else c.successColor
                         ) {}
                         Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 alert.address ?: "未知位置",
                                 color = c.onSurface,
@@ -387,6 +487,24 @@ fun AlertsPanel(c: AppColors) {
                                 color = if (alert.status == "active") c.errorColor else c.successColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+                        // 活跃报警：取消按钮
+                        if (alert.status == "active") {
+                            IconButton(onClick = { cancelAlertId = alert.id }) {
+                                Icon(
+                                    Icons.Default.Cancel,
+                                    contentDescription = "取消报警",
+                                    tint = c.errorColor
+                                )
+                            }
+                        }
+                        // 删除按钮
+                        IconButton(onClick = { deleteAlertId = alert.id }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "删除记录",
+                                tint = c.onSurfaceVariant
                             )
                         }
                     }
