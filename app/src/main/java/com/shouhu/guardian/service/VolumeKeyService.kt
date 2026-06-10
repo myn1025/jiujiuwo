@@ -44,13 +44,14 @@ class VolumeKeyService : AccessibilityService() {
         }
         super.onServiceConnected()
 
-        // 常驻低优先级通知（防国产ROM杀进程，独立进程 `:wake` 也受益）
+        // 前台通知 — 强制 startForeground() 防止国产ROM杀进程
         startPersistentNotification()
-        Log.i(TAG, "onServiceConnected OK (process: ${android.os.Process.myPid()})")
+        Log.i(TAG, "onServiceConnected OK (pid=${android.os.Process.myPid()})")
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         try {
+            Log.d(TAG, "onKeyEvent: code=${event.keyCode} action=${event.action} meta=${event.metaState}")
             if (event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && event.keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
                 return false
             }
@@ -71,11 +72,13 @@ class VolumeKeyService : AccessibilityService() {
                     handler.removeCallbacks(runnable!!)
                     trigger()
                 }
+                // 拦截音量键事件（不让系统音量弹窗出来）
+                return true
             } else {
                 if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) volDown = false else volUp = false
                 runnable?.let { handler.removeCallbacks(it) }
+                return true
             }
-            return (volDown || volUp)
         } catch (e: Exception) {
             Log.e(TAG, "onKeyEvent: ${e.message}")
             return false
@@ -92,15 +95,22 @@ class VolumeKeyService : AccessibilityService() {
         } catch (_: Exception) {}
         // 启动紧急服务
         try {
-            startService(Intent(this, EmergencyService::class.java).apply {
+            val intent = Intent(this, EmergencyService::class.java).apply {
                 action = EmergencyService.ACTION_TRIGGER
                 putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "volume_key")
-            })
-        } catch (_: Exception) {}
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "启动 EmergencyService 失败: ${e.message}")
+        }
         handler.postDelayed({ triggered = false }, 5000L)
     }
 
-    // ===== 常驻通知（防国产ROM杀进程）=====
+    // ===== 前台通知（防杀核心）=====
     private fun startPersistentNotification() {
         try {
             val channelId = "wake_channel"
@@ -109,7 +119,10 @@ class VolumeKeyService : AccessibilityService() {
                     channelId,
                     "按键唤醒",
                     NotificationManager.IMPORTANCE_LOW
-                ).apply { description = "按键唤醒服务" }
+                ).apply {
+                    description = "保持按键唤醒服务运行"
+                    setSound(null, null)
+                }
                 val nm = getSystemService(NotificationManager::class.java)
                 nm.createNotificationChannel(channel)
             }
@@ -121,26 +134,26 @@ class VolumeKeyService : AccessibilityService() {
             val notification: Notification = NotificationCompat.Builder(this, channelId)
                 .setContentTitle("按键唤醒就绪")
                 .setContentText("长按音量键2秒即可触发报警")
-                .setSmallIcon(com.shouhu.guardian.R.drawable.ic_launcher_foreground)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
-            // 不调用 startForeground — AccessibilityService 不允许，用系统通知即可
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.notify(NOTIFICATION_ID, notification)
+
+            // 关键：调用 startForeground() 而非单纯 notify()
+            startForeground(NOTIFICATION_ID, notification)
+            Log.i(TAG, "startForeground 已成功")
         } catch (e: Exception) {
-            Log.e(TAG, "常驻通知失败: ${e.message}")
+            Log.e(TAG, "前台通知失败: ${e.message}")
         }
     }
 
     override fun onInterrupt() {}
     override fun onDestroy() {
         runnable?.let { handler.removeCallbacks(it) }
-        // 清除常驻通知
         try {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.cancel(NOTIFICATION_ID)
+            stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (_: Exception) {}
         super.onDestroy()
     }

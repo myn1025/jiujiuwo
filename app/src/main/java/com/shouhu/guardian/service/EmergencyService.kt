@@ -83,29 +83,47 @@ class EmergencyService : Service() {
         try {
             val notification = buildNotification("⚠ 求救中", "正在获取位置…", true)
             startForeground(NOTIFICATION_ID, notification)
+            Log.i(TAG, "startForeground 成功")
         } catch (e: Exception) {
             Log.e(TAG, "startForeground 失败: ${e.message}", e)
-            // 继续执行，不因通知失败而中断报警
+            // 兜底：用 NotificationManager 发普通通知
+            try {
+                val nm = getSystemService(NotificationManager::class.java)
+                nm.notify(9999, buildNotification("⚠ 求救中", "正在获取位置…", true))
+            } catch (_: Exception) {}
         }
 
+        // 保底定时器：流程跑完后至少保持30秒前台
+        handler.postDelayed({
+            if (mediaRecorder == null) {
+                Log.i(TAG, "⏰ 30秒超时，自动停止")
+                stopEmergency()
+            }
+        }, 30_000L)
+
         scope.launch {
-            // 1. 获取 GPS 位置
-            val location = getLastLocation()
-            val address = if (location != null) "${location.latitude},${location.longitude}" else "位置获取中…"
+            try {
+                // 1. 获取 GPS 位置
+                val location = getLastLocation()
+                val address = if (location != null) "${location.latitude},${location.longitude}" else "位置获取中…"
 
-            Log.i(TAG, "📍 位置: $address")
+                Log.i(TAG, "📍 位置: $address")
 
-            // 2. 开始录音
-            startRecording()
+                // 2. 开始录音
+                startRecording()
 
-            // 3. 发送短信
-            sendSOSMessages(address)
+                // 3. 发送短信
+                sendSOSMessages(address)
 
-            // 4. 上报服务器
-            uploadToServer(source, location, address)
+                // 4. 上报服务器
+                uploadToServer(source, location, address)
 
-            // 5. 更新通知
-            updateNotification("📡 已发送求救信号", "位置: $address\n已通知紧急联系人", true)
+                // 5. 更新通知
+                updateNotification("📡 已发送求救信号", "位置: $address\n已通知紧急联系人", true)
+            } catch (e: Exception) {
+                Log.e(TAG, "startEmergencyFlow 内部异常: ${e.message}", e)
+                updateNotification("⚠ 求救中（部分失败）", "位置或短信可能未成功", true)
+            }
         }
     }
 

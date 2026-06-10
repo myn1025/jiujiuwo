@@ -560,13 +560,24 @@ fun SettingsPanel(
                     // 一键测试唤醒按钮（绕过音量键，直接测试唤醒链路）
                     if (triggerVolume && accessibilityEnabled) {
                         Spacer(modifier = Modifier.height(8.dp))
+                        val toastMsg = remember { mutableStateOf("") }
                         Button(
                             onClick = {
-                                val intent = Intent(context, EmergencyService::class.java).apply {
-                                    action = EmergencyService.ACTION_TRIGGER
-                                    putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "test_button")
+                                try {
+                                    val ctx = context.applicationContext
+                                    val intent = Intent(ctx, EmergencyService::class.java).apply {
+                                        action = EmergencyService.ACTION_TRIGGER
+                                        putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "test_button")
+                                    }
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        ctx.startForegroundService(intent)
+                                    } else {
+                                        ctx.startService(intent)
+                                    }
+                                    toastMsg.value = "✅ 已发送唤醒指令，检查通知栏是否有「求救中」"
+                                } catch (e: Exception) {
+                                    toastMsg.value = "❌ 启动失败: ${e.message}"
                                 }
-                                context.startService(intent)
                             },
                             modifier = Modifier.fillMaxWidth(),
                             colors = ButtonDefaults.buttonColors(containerColor = c.errorColor)
@@ -579,6 +590,9 @@ fun SettingsPanel(
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 4.dp)
                         )
+                        if (toastMsg.value.isNotEmpty()) {
+                            Text(toastMsg.value, color = if (toastMsg.value.startsWith("✅")) Color(0xFF10B981) else c.errorColor, fontSize = 12.sp)
+                        }
                     }
                     SwitchRow(c, "语音唤醒", "喊'救救我救命'触发", triggerVoice) {
                         triggerVoice = it

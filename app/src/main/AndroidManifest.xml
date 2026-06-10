@@ -77,10 +77,11 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- 音量键触发服务 (AccessibilityService) — 独立进程，关闭APP不影响按键唤醒 -->
+        <!-- 音量键触发服务 (AccessibilityService) — 独立进程+前台通知，关闭APP不影响按键唤醒 -->
         <service
             android:name=".service.VolumeKeyService"
             android:process=":wake"
+            android:foregroundServiceType="specialUse"
             android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
