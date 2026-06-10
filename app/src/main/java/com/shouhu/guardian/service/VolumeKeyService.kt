@@ -1,6 +1,7 @@
 package com.shouhu.guardian.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.os.Build
 import android.os.Handler
@@ -97,7 +98,20 @@ class VolumeKeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.i(TAG, "✅ 音键监听已启动")
+        try {
+            val info = AccessibilityServiceInfo().apply {
+                eventTypes = AccessibilityEvent.TYPE_VIEW_CLICKED or
+                    AccessibilityEvent.TYPE_VIEW_FOCUSED or
+                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+                notificationTimeout = 100
+                flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            }
+            serviceInfo = info
+            Log.i(TAG, "✅ 音键监听已启动")
+        } catch (e: Exception) {
+            Log.e(TAG, "onServiceConnected failed: ${e.message}")
+        }
     }
 
     override fun onInterrupt() {}
