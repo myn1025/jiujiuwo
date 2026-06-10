@@ -12,7 +12,7 @@ fun AppRoot() {
     val context = LocalContext.current
     val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
     var authToken by remember { mutableStateOf(prefs.getString("token", null)) }
-    var userEmail by remember { mutableStateOf(prefs.getString("email", "")) }
+    var userEmail by remember { mutableStateOf(prefs.getString("email", "") ?: "") }
     var darkMode by remember { mutableStateOf(isDarkMode(context)) }
 
     val startScreen = if (authToken != null) Screen.Main else Screen.Login
