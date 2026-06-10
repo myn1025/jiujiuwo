@@ -26,6 +26,7 @@ import androidx.fragment.app.FragmentActivity
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import com.shouhu.guardian.util.BiometricAuthUtils
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -177,7 +178,7 @@ fun LoginScreen(
                         onClick = {
                             scope.launch {
                                 try {
-                                    val resp = RetrofitClient.apiService.sendVerificationCode(email)
+                                    val resp = RetrofitClient.apiService.sendVerificationCode(SendCodeRequest(email))
                                     if (resp.isSuccessful) {
                                         codeSent = true; codeCountdown = 60
                                         while (codeCountdown > 0) { delay(1000); codeCountdown-- }
