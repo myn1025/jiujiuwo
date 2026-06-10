@@ -30,7 +30,6 @@ class VolumeKeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onServiceConnected() {
-        // 在 super 之前设 serviceInfo，防止系统默认设置覆盖
         try {
             val info = AccessibilityServiceInfo().apply {
                 eventTypes = AccessibilityEvent.TYPES_ALL_MASK
@@ -44,14 +43,14 @@ class VolumeKeyService : AccessibilityService() {
         }
         super.onServiceConnected()
 
-        // 前台通知 — 强制 startForeground() 防止国产ROM杀进程
-        startPersistentNotification()
-        Log.i(TAG, "onServiceConnected OK (pid=${android.os.Process.myPid()})")
+        // 显示常驻通知（低优先级，不用 startForeground，避免 ROM 兼容问题）
+        showNotification()
+        Log.i(TAG, "✅ onServiceConnected — pid=${android.os.Process.myPid()}")
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        Log.d(TAG, "keyEvent: code=${event.keyCode} action=${event.action} meta=${event.metaState}")
         try {
-            Log.d(TAG, "onKeyEvent: code=${event.keyCode} action=${event.action} meta=${event.metaState}")
             if (event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && event.keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
                 return false
             }
@@ -72,7 +71,6 @@ class VolumeKeyService : AccessibilityService() {
                     handler.removeCallbacks(runnable!!)
                     trigger()
                 }
-                // 拦截音量键事件（不让系统音量弹窗出来）
                 return true
             } else {
                 if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) volDown = false else volUp = false
@@ -88,12 +86,10 @@ class VolumeKeyService : AccessibilityService() {
     private fun trigger() {
         triggered = true
         Log.w(TAG, "⚡ 音量键触发 — 启动 EmergencyService")
-        // 短震反馈
         try {
             val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
             vm?.defaultVibrator?.vibrate(VibrationEffect.createOneShot(200, 200))
         } catch (_: Exception) {}
-        // 启动紧急服务
         try {
             val intent = Intent(this, EmergencyService::class.java).apply {
                 action = EmergencyService.ACTION_TRIGGER
@@ -110,8 +106,7 @@ class VolumeKeyService : AccessibilityService() {
         handler.postDelayed({ triggered = false }, 5000L)
     }
 
-    // ===== 前台通知（防杀核心）=====
-    private fun startPersistentNotification() {
+    private fun showNotification() {
         try {
             val channelId = "wake_channel"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -134,28 +129,24 @@ class VolumeKeyService : AccessibilityService() {
             val notification: Notification = NotificationCompat.Builder(this, channelId)
                 .setContentTitle("按键唤醒就绪")
                 .setContentText("长按音量键2秒即可触发报警")
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setSmallIcon(com.shouhu.guardian.R.drawable.ic_notification)
                 .setContentIntent(pi)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
-
-            // 关键：调用 startForeground() 而非单纯 notify()
-            startForeground(NOTIFICATION_ID, notification)
-            Log.i(TAG, "startForeground 已成功")
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(NOTIFICATION_ID, notification)
         } catch (e: Exception) {
-            Log.e(TAG, "前台通知失败: ${e.message}")
+            Log.e(TAG, "通知失败: ${e.message}")
         }
     }
 
     override fun onInterrupt() {}
     override fun onDestroy() {
         runnable?.let { handler.removeCallbacks(it) }
-        try {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } catch (_: Exception) {}
+        try { (getSystemService(NotificationManager::class.java)).cancel(NOTIFICATION_ID) } catch (_: Exception) {}
         super.onDestroy()
+        Log.i(TAG, "onDestroy")
     }
 
     companion object {

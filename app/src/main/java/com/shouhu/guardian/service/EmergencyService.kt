@@ -231,7 +231,7 @@ class EmergencyService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(com.shouhu.guardian.R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(ongoing)
             .setPriority(if (ongoing) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
