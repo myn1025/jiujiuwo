@@ -1,5 +1,6 @@
 package com.shouhu.guardian.ui
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -411,6 +412,7 @@ fun SettingsPanel(
     var autoGps by remember { mutableStateOf(true) }
     var accessibilityEnabled by remember { mutableStateOf(false) }
     var showAccessibilityDialog by remember { mutableStateOf(false) }
+    var useBiometric by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -431,6 +433,7 @@ fun SettingsPanel(
                 }
             }
         } catch (_: Exception) {}
+        useBiometric = context.getSharedPreferences("auth", Context.MODE_PRIVATE).getBoolean("use_biometric", false)
         loaded = true
     }
 
@@ -465,6 +468,12 @@ fun SettingsPanel(
                     Text("🎨 外观", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     SwitchRow(c, "深色模式", "切换深色/浅色主题", darkTheme) {
                         onToggleTheme(it)
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    SwitchRow(c, "指纹/面容登录", "下次打开APP用指纹或面容验证", useBiometric) {
+                        useBiometric = it
+                        context.getSharedPreferences("auth", Context.MODE_PRIVATE).edit()
+                            .putBoolean("use_biometric", it).apply()
                     }
                 }
             }

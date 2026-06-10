@@ -109,6 +109,9 @@ dependencies {
     // DataStore (token persistence)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
+    // Biometric
+    implementation("androidx.biometric:biometric:1.4.0")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

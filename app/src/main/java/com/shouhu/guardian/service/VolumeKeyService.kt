@@ -3,7 +3,6 @@ package com.shouhu.guardian.service
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -15,113 +14,84 @@ import android.view.accessibility.AccessibilityEvent
 
 class VolumeKeyService : AccessibilityService() {
 
-    private var volumeDownPressed = false
-    private var volumeUpPressed = false
-    private var downPressTime = 0L
-    private var upPressTime = 0L
+    private var volDown = false
+    private var volUp = false
     private var triggered = false
     private val handler = Handler(Looper.getMainLooper())
-    private val LONG_PRESS_MS = 2000L
-    private var longPressRunnable: Runnable? = null
+    private var runnable: Runnable? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        val keyCode = event.keyCode
-        if (keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
-            return super.onKeyEvent(event)
-        }
-
-        when (event.action) {
-            KeyEvent.ACTION_DOWN -> {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                        if (!volumeDownPressed) { volumeDownPressed = true; downPressTime = event.eventTime }
-                    }
-                    KeyEvent.KEYCODE_VOLUME_UP -> {
-                        if (!volumeUpPressed) { volumeUpPressed = true; upPressTime = event.eventTime }
-                    }
-                }
-                // 长按计时
-                longPressRunnable?.let { handler.removeCallbacks(it) }
-                longPressRunnable = Runnable {
-                    if ((volumeDownPressed || volumeUpPressed) && !triggered) {
-                        Log.i(TAG, "⚡ 长按${LONG_PRESS_MS / 1000}秒 → 触发")
-                        triggerAlert()
-                    }
-                }
-                handler.postDelayed(longPressRunnable!!, LONG_PRESS_MS)
-
-                // 双键同时 → 立即触发
-                if (volumeDownPressed && volumeUpPressed && !triggered) {
-                    longPressRunnable?.let { handler.removeCallbacks(it) }
-                    Log.i(TAG, "⚡ 双键同时 → 触发")
-                    triggerAlert()
-                }
+        try {
+            if (event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN && event.keyCode != KeyEvent.KEYCODE_VOLUME_UP) {
+                return false
             }
-            KeyEvent.ACTION_UP -> {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> volumeDownPressed = false
-                    KeyEvent.KEYCODE_VOLUME_UP -> volumeUpPressed = false
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    if (!volDown) { volDown = true }
+                } else {
+                    if (!volUp) { volUp = true }
                 }
-                longPressRunnable?.let { handler.removeCallbacks(it) }
-                longPressRunnable = null
+                runnable?.let { handler.removeCallbacks(it) }
+                runnable = Runnable {
+                    if ((volDown || volUp) && !triggered) {
+                        trigger()
+                    }
+                }
+                handler.postDelayed(runnable!!, 2000L)
+                if (volDown && volUp && !triggered) {
+                    handler.removeCallbacks(runnable!!)
+                    trigger()
+                }
+            } else {
+                if (event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) volDown = false else volUp = false
+                runnable?.let { handler.removeCallbacks(it) }
             }
+            return (volDown || volUp)
+        } catch (e: Exception) {
+            Log.e(TAG, "onKeyEvent: ${e.message}")
+            return false
         }
-
-        return (volumeDownPressed || volumeUpPressed)
     }
 
-    private fun triggerAlert() {
+    private fun trigger() {
         triggered = true
         try {
-            // 振动
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator?.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                val v = getSystemService(VIBRATOR_SERVICE) as? Vibrator
-                v?.vibrate(300)
-            }
+            val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vm?.defaultVibrator?.vibrate(VibrationEffect.createOneShot(200, 200))
         } catch (_: Exception) {}
-
         try {
             startService(Intent(this, EmergencyService::class.java).apply {
                 action = EmergencyService.ACTION_TRIGGER
                 putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "volume_key")
             })
         } catch (_: Exception) {}
-
-        handler.postDelayed({ triggered = false }, 5000)
+        handler.postDelayed({ triggered = false }, 5000L)
     }
 
     override fun onServiceConnected() {
-        super.onServiceConnected()
+        // 在 super 之前设 serviceInfo，防止系统默认设置覆盖
         try {
             val info = AccessibilityServiceInfo().apply {
-                eventTypes = AccessibilityEvent.TYPE_VIEW_CLICKED or
-                    AccessibilityEvent.TYPE_VIEW_FOCUSED or
-                    AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                eventTypes = AccessibilityEvent.TYPES_ALL_MASK
                 feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+                flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or AccessibilityServiceInfo.DEFAULT
                 notificationTimeout = 100
-                flags = AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
             }
             serviceInfo = info
-            Log.i(TAG, "✅ 音键监听已启动")
         } catch (e: Exception) {
-            Log.e(TAG, "onServiceConnected failed: ${e.message}")
+            Log.e(TAG, "setInfo: ${e.message}")
         }
+        super.onServiceConnected()
+        Log.i(TAG, "onServiceConnected OK")
     }
 
     override fun onInterrupt() {}
-
     override fun onDestroy() {
-        longPressRunnable?.let { handler.removeCallbacks(it) }
+        runnable?.let { handler.removeCallbacks(it) }
         super.onDestroy()
     }
 
-    companion object {
-        const val TAG = "VolumeKeyService"
-    }
+    companion object { const val TAG = "VolumeKeyService" }
 }

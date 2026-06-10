@@ -9,9 +9,8 @@ import com.shouhu.guardian.ui.theme.setDarkMode
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
-    var authToken by remember { mutableStateOf<String?>(
-        context.getSharedPreferences("auth", Context.MODE_PRIVATE).getString("token", null)
-    ) }
+    val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
+    var authToken by remember { mutableStateOf(prefs.getString("token", null)) }
     var userEmail by remember { mutableStateOf("") }
     var darkMode by remember { mutableStateOf(isDarkMode(context)) }
 
@@ -21,6 +20,8 @@ fun AppRoot() {
     when (screen) {
         Screen.Login -> {
             LoginScreen(
+                darkTheme = darkMode,
+                savedToken = authToken,
                 onLoginSuccess = { token, email ->
                     authToken = token
                     userEmail = email
@@ -40,6 +41,7 @@ fun AppRoot() {
                 onLogout = {
                     authToken = null
                     userEmail = ""
+                    prefs.edit().remove("token").apply()
                     screen = Screen.Login
                 }
             )
