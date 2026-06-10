@@ -71,6 +71,12 @@ class VolumeKeyService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        // 恢复认证 token（进程重启后）
+        try {
+            val token = getSharedPreferences("auth", MODE_PRIVATE).getString("token", null)
+            com.shouhu.guardian.data.api.RetrofitClient.setToken(token)
+        } catch (_: Exception) {}
+
         // 在 super 之前设 serviceInfo，防止系统默认设置覆盖
         try {
             val info = AccessibilityServiceInfo().apply {

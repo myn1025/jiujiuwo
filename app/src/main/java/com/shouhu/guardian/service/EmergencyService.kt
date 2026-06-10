@@ -50,6 +50,12 @@ class EmergencyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 恢复认证 token（防止进程重启后 RetrofitClient 丢 token）
+        try {
+            val token = getSharedPreferences("auth", MODE_PRIVATE).getString("token", null)
+            RetrofitClient.setToken(token)
+        } catch (_: Exception) {}
+
         val action = intent?.action
         val source = intent?.getStringExtra(EXTRA_TRIGGER_SOURCE) ?: "unknown"
 
@@ -73,8 +79,14 @@ class EmergencyService : Service() {
 
     private fun startEmergencyFlow(source: String) {
         currentLevel = 1
-        val notification = buildNotification("⚠ 求救中", "正在获取位置…", true)
-        startForeground(NOTIFICATION_ID, notification)
+        // 用 try-catch 包住 startForeground，防止国产 ROM 抛异常杀进程
+        try {
+            val notification = buildNotification("⚠ 求救中", "正在获取位置…", true)
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "startForeground 失败: ${e.message}", e)
+            // 继续执行，不因通知失败而中断报警
+        }
 
         scope.launch {
             // 1. 获取 GPS 位置

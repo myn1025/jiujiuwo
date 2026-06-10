@@ -106,6 +106,9 @@ fun GuardianMainScreen(
     onToggleTheme: (Boolean) -> Unit,
     onLogout: () -> Unit
 ) {
+    // 确保 RetrofitClient 持有 token（进程重启后 App.onCreate 已恢复，此处兜底）
+    RetrofitClient.setToken(token)
+
     val c = if (darkTheme) DarkColors else LightColors
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("联系人" to Icons.Default.People, "报警记录" to Icons.Default.Warning, "设置" to Icons.Default.Settings)
@@ -552,7 +555,7 @@ fun SettingsPanel(
                             }
                         }
                     }
-                    SwitchRow(c, "语音唤醒", "喊'紫守护救命'触发", triggerVoice) {
+                    SwitchRow(c, "语音唤醒", "喊'救救我救命'触发", triggerVoice) {
                         triggerVoice = it
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = it)) } catch (_: Exception) {}
