@@ -1,6 +1,7 @@
 package com.shouhu.guardian.ui
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -24,6 +25,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
+import com.shouhu.guardian.service.EmergencyService
 import com.shouhu.guardian.service.VolumeKeyService
 import com.shouhu.guardian.util.AccessibilityUtils
 import kotlinx.coroutines.launch
@@ -554,6 +556,29 @@ fun SettingsPanel(
                                 try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = wantOn)) } catch (_: Exception) {}
                             }
                         }
+                    }
+                    // 一键测试唤醒按钮（绕过音量键，直接测试唤醒链路）
+                    if (triggerVolume && accessibilityEnabled) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(context, EmergencyService::class.java).apply {
+                                    action = EmergencyService.ACTION_TRIGGER
+                                    putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "test_button")
+                                }
+                                context.startService(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = c.errorColor)
+                        ) {
+                            Text("🧪 一键测试唤醒")
+                        }
+                        Text(
+                            "点击直接触发报警流程，测试唤醒链路是否正常",
+                            color = c.onSurfaceVariant,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                     SwitchRow(c, "语音唤醒", "喊'救救我救命'触发", triggerVoice) {
                         triggerVoice = it
