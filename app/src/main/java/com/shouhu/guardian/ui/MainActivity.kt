@@ -19,18 +19,22 @@ import com.shouhu.guardian.ui.theme.isDarkMode
 
 class MainActivity : ComponentActivity() {
 
-    // Android 13+ 通知权限运行时请求
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* 不管用户是否允许，APP 继续运行 */ }
+    ) { }
+
+    private val smsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         title = ""
 
-        // 请求通知权限（Android 13+）
+        // 请求运行时权限
         requestNotificationPermission()
+        requestSmsPermission()
 
         val darkMode = isDarkMode(this)
         setContent {
@@ -53,6 +57,14 @@ class MainActivity : ComponentActivity() {
             ) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
+        }
+    }
+
+    private fun requestSmsPermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
         }
     }
 }

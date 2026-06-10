@@ -26,6 +26,7 @@ import androidx.fragment.app.FragmentActivity
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import com.shouhu.guardian.util.BiometricAuthUtils
+import com.shouhu.guardian.util.CredentialStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -58,8 +59,10 @@ fun LoginScreen(
     val subtitleColor = if (darkTheme) Color(0xFF8878A0) else Color(0xFF666666)
     val fieldColors = if (darkTheme) darkFieldColors() else lightFieldColors()
 
-    // Biometric available?
-    val hasBiometric = savedToken != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
+    // Biometric：优先用 memory token，否则查加密凭据（退出登录后也能指纹恢复）
+    val secureToken: String? = savedToken ?: if (remember { CredentialStore.hasCredentials(context) }) CredentialStore.getToken(context) else null
+    val secureEmail: String = savedToken?.let { "" } ?: CredentialStore.getEmail(context) ?: ""
+    val hasBiometric = secureToken != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
     var showBiometric by remember { mutableStateOf(hasBiometric) }
 
     // Auto-trigger biometric on first render
@@ -69,8 +72,8 @@ fun LoginScreen(
                 activity = context as FragmentActivity,
                 onSuccess = {
                     showBiometric = false
-                    RetrofitClient.setToken(savedToken!!)
-                    onLoginSuccess(savedToken!!, "")
+                    RetrofitClient.setToken(secureToken!!)
+                    onLoginSuccess(secureToken!!, secureEmail)
                 },
                 onError = { error ->
                     showBiometric = false

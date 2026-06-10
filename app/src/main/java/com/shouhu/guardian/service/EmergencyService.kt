@@ -6,11 +6,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -18,7 +22,6 @@ import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import com.google.android.gms.location.*
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.EmergencyRequest
 import com.shouhu.guardian.ui.MainActivity
@@ -29,7 +32,7 @@ import java.io.File
  * 紧急后台服务
  *
  * 收到 ACTION_TRIGGER 时执行完整报警流程：
- * 1. 获取 GPS 定位
+ * 1. 获取 GPS 定位（用 LocationManager，不依赖 Google Play Services）
  * 2. 录制音频
  * 3. 发送短信给紧急联系人
  * 4. 上传服务器
@@ -37,7 +40,7 @@ import java.io.File
 class EmergencyService : Service() {
 
     private var mediaRecorder: MediaRecorder? = null
-    private var fusedLocationClient: FusedLocationProviderClient? = null
+    private var locationManager: LocationManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentLevel = 1
@@ -45,7 +48,7 @@ class EmergencyService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         Log.i(TAG, "EmergencyService 已创建")
     }
 
@@ -79,14 +82,12 @@ class EmergencyService : Service() {
 
     private fun startEmergencyFlow(source: String) {
         currentLevel = 1
-        // 用 try-catch 包住 startForeground，防止国产 ROM 抛异常杀进程
         try {
             val notification = buildNotification("⚠ 求救中", "正在获取位置…", true)
             startForeground(NOTIFICATION_ID, notification)
             Log.i(TAG, "startForeground 成功")
         } catch (e: Exception) {
             Log.e(TAG, "startForeground 失败: ${e.message}", e)
-            // 兜底：用 NotificationManager 发普通通知
             try {
                 val nm = getSystemService(NotificationManager::class.java)
                 nm.notify(9999, buildNotification("⚠ 求救中", "正在获取位置…", true))
@@ -103,23 +104,24 @@ class EmergencyService : Service() {
 
         scope.launch {
             try {
-                // 1. 获取 GPS 位置
-                val location = getLastLocation()
-                val address = if (location != null) "${location.latitude},${location.longitude}" else "位置获取中…"
-
+                // 1. 获取 GPS 位置（用 LocationManager，不依赖 Google Play Services）
+                val location = getLocation()
+                val address = if (location != null) "${location.latitude},${location.longitude}" else "位置获取失败"
                 Log.i(TAG, "📍 位置: $address")
+
+                updateNotification("📍 位置已获取", "位置: $address\n正在发送求救…", true)
 
                 // 2. 开始录音
                 startRecording()
 
                 // 3. 发送短信
-                sendSOSMessages(address)
+                val smsResult = sendSOSMessages(address)
 
                 // 4. 上报服务器
                 uploadToServer(source, location, address)
 
                 // 5. 更新通知
-                updateNotification("📡 已发送求救信号", "位置: $address\n已通知紧急联系人", true)
+                updateNotification("📡 已发送求救信号", "位置: $address\n$smsResult", true)
             } catch (e: Exception) {
                 Log.e(TAG, "startEmergencyFlow 内部异常: ${e.message}", e)
                 updateNotification("⚠ 求救中（部分失败）", "位置或短信可能未成功", true)
@@ -127,16 +129,57 @@ class EmergencyService : Service() {
         }
     }
 
-    private suspend fun getLastLocation(): Location? = suspendCancellableCoroutine { cont ->
+    /**
+     * 获取 GPS 位置 — 使用 Android 原生 LocationManager（不依赖 Google Play Services）
+     * 高德地图定位需另外接入 SDK，现阶段用原生 GPS+网络双定位
+     */
+    private suspend fun getLocation(): Location? = suspendCancellableCoroutine { cont ->
+        var resumed = false
+        val listener = object : LocationListener {
+            override fun onLocationChanged(loc: Location) {
+                if (!resumed) { resumed = true; cont.resume(loc) {} }
+            }
+            override fun onProviderDisabled(p: String) {}
+            override fun onProviderEnabled(p: String) {}
+            override fun onStatusChanged(p: String, s: Int, e: Bundle) {}
+        }
+
         try {
-            fusedLocationClient?.lastLocation?.addOnSuccessListener { location ->
-                cont.resume(location) {}
-            }?.addOnFailureListener {
+            // 先尝试 getLastKnownLocation（最快）
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            for (provider in providers) {
+                if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    val last = locationManager?.getLastKnownLocation(provider)
+                    if (last != null && (System.currentTimeMillis() - last.time) < 120_000) {
+                        // 2分钟内的缓存用
+                        cont.resume(last) {}
+                        return@suspendCancellableCoroutine
+                    }
+                }
+            }
+
+            // 请求单次定位
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED
+            ) {
+                locationManager?.requestSingleUpdate(LocationManager.GPS_PROVIDER, listener, Looper.getMainLooper())
+                // 5秒超时
+                handler.postDelayed({
+                    if (!resumed) { resumed = true; cont.resume(null) {} }
+                }, 5000L)
+            } else {
+                Log.e(TAG, "缺少定位权限")
                 cont.resume(null) {}
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "缺少定位权限", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "定位异常: ${e.message}")
             cont.resume(null) {}
+        }
+
+        cont.invokeOnCancellation {
+            try { locationManager?.removeUpdates(listener) } catch (_: Exception) {}
         }
     }
 
@@ -158,30 +201,46 @@ class EmergencyService : Service() {
         }
     }
 
-    private suspend fun sendSOSMessages(address: String) {
+    private suspend fun sendSOSMessages(address: String): String {
+        var successCount = 0
+        var failCount = 0
         try {
+            // 检查权限
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.e(TAG, "❌ 缺少 SEND_SMS 权限")
+                return "短信权限未授予"
+            }
+
             val resp = RetrofitClient.apiService.getContacts()
-            if (!resp.isSuccessful) return
-            val contacts = resp.body() ?: return
+            if (!resp.isSuccessful) return "获取联系人失败"
+            val contacts = resp.body() ?: return "联系人列表为空"
+
+            Log.i(TAG, "📋 获取到 ${contacts.size} 个联系人")
 
             contacts.sortedBy { it.priority }.take(5).forEach { contact ->
                 val message = "【SOS】${contact.name}，这是来自紫守护的紧急求救信号！\n📍 位置：$address\n请立即确认对方安全！"
                 try {
                     val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        getSystemService(android.telephony.SmsManager::class.java)
+                        getSystemService(SmsManager::class.java)
                     } else {
                         @Suppress("DEPRECATION")
-                        android.telephony.SmsManager.getDefault()
+                        SmsManager.getDefault()
                     }
                     smsManager.sendTextMessage(contact.phone, null, message, null, null)
+                    successCount++
                     Log.i(TAG, "📩 短信已发送至 ${contact.name}(${contact.phone})")
                 } catch (e: Exception) {
+                    failCount++
                     Log.e(TAG, "短信发送失败: ${contact.phone}", e)
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "获取联系人失败", e)
+            return "获取联系人失败"
         }
+        return "已通知 $successCount 个联系人" + if (failCount > 0) "（${failCount}个发送失败）" else ""
     }
 
     private suspend fun uploadToServer(source: String, location: Location?, address: String) {

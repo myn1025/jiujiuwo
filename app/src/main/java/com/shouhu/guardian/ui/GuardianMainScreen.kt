@@ -398,7 +398,13 @@ fun AlertsPanel(c: AppColors) {
 
 private fun formatTime(iso: String): String {
     return try {
-        iso.replace("T", " ").substringBefore(".")
+        // 服务器存 UTC，转为本地时间
+        val utcFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }
+        val date = utcFormat.parse(iso.substringBefore("."))
+        val localFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        if (date != null) localFormat.format(date) else iso
     } catch (_: Exception) { iso }
 }
 
