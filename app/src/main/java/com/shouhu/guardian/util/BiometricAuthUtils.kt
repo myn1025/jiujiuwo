@@ -10,7 +10,7 @@ object BiometricAuthUtils {
 
     fun isBiometricAvailable(context: Context): Boolean {
         val manager = BiometricManager.from(context)
-        return manager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
+        return manager.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     fun authenticate(
