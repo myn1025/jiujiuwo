@@ -67,21 +67,22 @@ fun LoginScreen(
 
     /** 执行生物识别验证 */
     val doBiometricAuth = {
-        if (isBiometricInProgress || !hasBiometric || context !is FragmentActivity) return@doBiometricAuth
-        isBiometricInProgress = true
-        BiometricAuthUtils.authenticate(
-            activity = context as FragmentActivity,
-            onSuccess = {
-                isBiometricInProgress = false
-                RetrofitClient.setToken(secureToken!!)
-                onLoginSuccess(secureToken!!, secureEmail)
-            },
-            onError = { error ->
-                isBiometricInProgress = false
-                errorMsg = "验证失败: $error"
-            },
-            onFallback = { isBiometricInProgress = false }
-        )
+        if (!isBiometricInProgress && hasBiometric && context is FragmentActivity) {
+            isBiometricInProgress = true
+            BiometricAuthUtils.authenticate(
+                activity = context as FragmentActivity,
+                onSuccess = {
+                    isBiometricInProgress = false
+                    RetrofitClient.setToken(secureToken!!)
+                    onLoginSuccess(secureToken!!, secureEmail)
+                },
+                onError = { error ->
+                    isBiometricInProgress = false
+                    errorMsg = "验证失败: $error"
+                },
+                onFallback = { isBiometricInProgress = false }
+            )
+        }
     }
 
     // 首次进入：有凭据则自动弹出指纹
