@@ -67,7 +67,7 @@ fun LoginScreen(
 
     /** 执行生物识别验证 */
     val doBiometricAuth = {
-        if (isBiometricInProgress || !hasBiometric || context !is FragmentActivity) return@let
+        if (isBiometricInProgress || !hasBiometric || context !is FragmentActivity) return@doBiometricAuth
         isBiometricInProgress = true
         BiometricAuthUtils.authenticate(
             activity = context as FragmentActivity,
