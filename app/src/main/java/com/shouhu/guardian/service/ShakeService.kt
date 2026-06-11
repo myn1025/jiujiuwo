@@ -3,13 +3,17 @@ package com.shouhu.guardian.service
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.shouhu.guardian.R
-import kotlinx.coroutines.*
+import kotlin.math.sqrt
 
 /**
  * 摇一摇求救服务
@@ -32,6 +36,7 @@ class ShakeService : Service() {
     }
 
     private var sensorManager: SensorManager? = null
+    private var sensorListener: SensorEventListener? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     // 摇晃检测状态
@@ -52,7 +57,8 @@ class ShakeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        sensorManager?.unregisterListener(this)
+        sensorListener?.let { sensorManager?.unregisterListener(it) }
+        sensorListener = null
         wakeLock?.let { if (it.isHeld) it.release() }
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -93,32 +99,35 @@ class ShakeService : Service() {
     private fun initSensor() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val accel = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        if (accel != null) {
-            sensorManager?.registerListener(
-                object : android.hardware.SensorEventListener {
-                    override fun onSensorChanged(event: android.hardware.SensorEvent?) {
-                        event ?: return
-                        handleAccelerometer(event)
-                    }
-                    override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
-                },
-                accel,
-                SensorManager.SENSOR_DELAY_GAME  // 20ms 采样，够快不费电
-            )
-            Log.i(TAG, "加速度传感器已注册")
-        } else {
+        if (accel == null) {
             Log.e(TAG, "设备无加速度传感器")
             stopSelf()
+            return
         }
+
+        sensorListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event ?: return
+                handleAccelerometer(event)
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        sensorManager?.registerListener(
+            sensorListener,
+            accel,
+            SensorManager.SENSOR_DELAY_GAME  // 20ms 采样
+        )
+        Log.i(TAG, "加速度传感器已注册")
     }
 
-    private fun handleAccelerometer(event: android.hardware.SensorEvent) {
+    private fun handleAccelerometer(event: SensorEvent) {
         val x = event.values[0]
         val y = event.values[1]
         val z = event.values[2]
 
-        // 计算 g 力：加速度矢量大小 / 重力加速度
-        val gForce = Math.sqrt((x * x + y * y + z * z).toDouble()) / SensorManager.GRAVITY_EARTH
+        // g 力 = sqrt(x²+y²+z²) / 重力加速度
+        val gForce = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
         val now = System.currentTimeMillis()
 
         // 低于阈值：忽略

@@ -28,10 +28,7 @@ class WakeWordService : Service() {
         const val TAG = "WakeWordService"
         const val NOTIFICATION_ID = 2002
         const val CHANNEL_ID = "wake_word_service"
-
-        // Porcupine 参数
         private const val SAMPLE_RATE = 16000
-        private const val FRAME_LENGTH = Porcupine.FRAME_LENGTH
     }
 
     private var porcupine: Porcupine? = null
@@ -120,10 +117,10 @@ class WakeWordService : Service() {
 
             porcupine = Porcupine.Builder()
                 .setAccessKey(accessKey)
-                .setKeyword(BuiltInKeyword.PORCUPINE)
+                .setKeyword(Porcupine.BuiltInKeyword.PORCUPINE)
                 .build(applicationContext)
 
-            Log.i(TAG, "Porcupine 初始化成功 ($SAMPLE_RATE Hz, frame_len=$FRAME_LENGTH)")
+            Log.i(TAG, "Porcupine 初始化成功 ($SAMPLE_RATE Hz, frame_len=${porcupine?.frameLength})")
             startListening()
         } catch (e: PorcupineInvalidArgumentException) {
             val msg = "AccessKey 无效"
@@ -151,6 +148,11 @@ class WakeWordService : Service() {
     private fun startListening() {
         if (isListening) return
 
+        val frameLen = porcupine?.frameLength ?: run {
+            Log.e(TAG, "Porcupine 未初始化，无法启动监听")
+            return
+        }
+
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf == AudioRecord.ERROR || minBuf == AudioRecord.ERROR_BAD_VALUE) {
             Log.e(TAG, "AudioRecord 缓冲区计算失败")
@@ -163,7 +165,7 @@ class WakeWordService : Service() {
                 SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT,
-                minBuf.coerceAtLeast(FRAME_LENGTH * 2)
+                minBuf.coerceAtLeast(frameLen * 2)
             )
         } catch (e: SecurityException) {
             Log.e(TAG, "麦克风权限被拒绝", e)
@@ -186,11 +188,11 @@ class WakeWordService : Service() {
 
         recordThread = Thread {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
-            val frame = ShortArray(FRAME_LENGTH)
+            val frame = ShortArray(frameLen)
 
             while (isListening) {
                 try {
-                    val read = audioRecord?.read(frame, 0, FRAME_LENGTH) ?: -1
+                    val read = audioRecord?.read(frame, 0, frameLen) ?: -1
                     if (read <= 0) continue
 
                     val keywordIndex = porcupine?.process(frame) ?: -1
