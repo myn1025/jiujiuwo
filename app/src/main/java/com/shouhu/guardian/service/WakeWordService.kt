@@ -38,7 +38,7 @@ class WakeWordService : Service() {
         private const val SAMPLE_RATE = 16000
         private const val MODEL_DIR = "vosk-model-small-cn-0.22"
         private const val MODEL_ZIP = "$MODEL_DIR.zip"
-        private const val MODEL_URL = "https://alphacephei.com/vosk/models/$MODEL_ZIP"
+        private const val MODEL_URL = "https://tc-api.cn/app/zishouhu/vosk-model-small-cn-0.22.zip"
 
         // 外部重启接口
         const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
