@@ -62,6 +62,51 @@ class WakeWordService : Service() {
     private val handler = Handler(Looper.getMainLooper())
 
     /** 唤醒词列表（从 SharedPreferences 读取） */
+    private val recognitionListener = object : RecognitionListener {
+        override fun onPartialResult(hypothesis: String) {
+            checkForWakeWord(hypothesis)
+        }
+
+        override fun onResult(hypothesis: String) {
+            Log.d(TAG, "onResult: $hypothesis")
+        }
+
+        override fun onFinalResult(hypothesis: String) {
+            Log.d(TAG, "onFinalResult: $hypothesis")
+            speechService?.shutdown()
+            speechService = null
+            recognizer?.close()
+            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+            restartSpeechService()
+        }
+
+        override fun onError(e: Exception) {
+            Log.e(TAG, "SpeechService 错误: ${e.message}")
+            if (isListening && !pendingRestart) {
+                handler.postDelayed({
+                    if (isListening && !pendingRestart) {
+                        Log.w(TAG, "SpeechService 自动恢复")
+                        speechService?.shutdown()
+                        speechService = null
+                        recognizer?.close()
+                        recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                        restartSpeechService()
+                    }
+                }, 1000)
+            }
+        }
+
+        override fun onTimeout() {
+            Log.d(TAG, "onTimeout — 重置识别器")
+            speechService?.shutdown()
+            speechService = null
+            recognizer?.close()
+            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+            restartSpeechService()
+        }
+    }
+
+    /** 唤醒词列表（从 SharedPreferences 读取） */
     private var wakeWords: List<String> = listOf("救救我")
 
     // ===== 生命周期 =====
@@ -319,87 +364,15 @@ class WakeWordService : Service() {
         if (isListening || recognizer == null) return
 
         isListening = true
-        speechService = SpeechService(object : RecognitionListener {
-            override fun onPartialResult(hypothesis: String) {
-                checkForWakeWord(hypothesis)
-            }
-
-            override fun onResult(hypothesis: String) {
-                Log.d(TAG, "onResult: $hypothesis")
-            }
-
-            override fun onFinalResult(hypothesis: String) {
-                Log.d(TAG, "onFinalResult: $hypothesis")
-                // 最终结果达到后自动重置识别器
-                speechService?.shutdown()
-                speechService = null
-                // 创建新的 recognizer 重新开始
-                recognizer?.close()
-                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-                restartSpeechService()
-            }
-
-            override fun onError(e: Exception) {
-                Log.e(TAG, "SpeechService 错误: ${e.message}")
-                if (isListening && !pendingRestart) {
-                    // 尝试自动恢复
-                    handler.postDelayed({
-                        if (isListening && !pendingRestart) {
-                            Log.w(TAG, "SpeechService 自动恢复")
-                            speechService?.shutdown()
-                            speechService = null
-                            recognizer?.close()
-                            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-                            restartSpeechService()
-                        }
-                    }, 1000)
-                }
-            }
-
-            override fun onTimeout() {
-                Log.d(TAG, "onTimeout — 重置识别器")
-                speechService?.shutdown()
-                speechService = null
-                recognizer?.close()
-                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-                restartSpeechService()
-            }
-        }, SAMPLE_RATE.toFloat())
-
-        speechService?.startListening(recognizer!!)
+        speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
+        speechService?.startListening(recognitionListener)
         updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
     }
 
     private fun restartSpeechService() {
         if (!isListening || pendingRestart) return
-        speechService = SpeechService(object : RecognitionListener {
-            override fun onPartialResult(hypothesis: String) {
-                checkForWakeWord(hypothesis)
-            }
-
-            override fun onResult(hypothesis: String) {}
-
-            override fun onFinalResult(hypothesis: String) {
-                speechService?.shutdown()
-                speechService = null
-                recognizer?.close()
-                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-                restartSpeechService()
-            }
-
-            override fun onError(e: Exception) {
-                Log.e(TAG, "SpeechService 错误", e)
-            }
-
-            override fun onTimeout() {
-                speechService?.shutdown()
-                speechService = null
-                recognizer?.close()
-                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-                restartSpeechService()
-            }
-        }, SAMPLE_RATE.toFloat())
-        speechService?.startListening(recognizer!!)
+        speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
+        speechService?.startListening(recognitionListener)
     }
 
     private fun stopListening() {
