@@ -362,7 +362,7 @@ fun AlertsPanel(c: AppColors) {
             title = { Text("取消报警") },
             text = {
                 Column {
-                    Text("请输入安全密码以取消报警（默认2580）", fontSize = 14.sp)
+                    Text("请输入安全密码以取消报警", fontSize = 14.sp)
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = cancelPassword,
@@ -379,12 +379,16 @@ fun AlertsPanel(c: AppColors) {
             confirmButton = {
                 TextButton(
                     onClick = {
+                        if (cancelPassword.isBlank()) {
+                            cancelError = "请输入安全密码"
+                            return@TextButton
+                        }
                         scope.launch {
                             actionLoading = true
                             try {
                                 val resp = RetrofitClient.apiService.cancelAlert(
                                     cancelAlertId!!,
-                                    password = cancelPassword.ifBlank { "2580" }
+                                    password = cancelPassword
                                 )
                                 if (resp.isSuccessful) {
                                     cancelAlertId = null

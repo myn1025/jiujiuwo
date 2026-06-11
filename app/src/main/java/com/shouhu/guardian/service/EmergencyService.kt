@@ -9,6 +9,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -27,6 +28,7 @@ import com.shouhu.guardian.data.model.EmergencyRequest
 import com.shouhu.guardian.ui.MainActivity
 import kotlinx.coroutines.*
 import java.io.File
+import java.util.Locale
 
 /**
  * 紧急后台服务
@@ -104,9 +106,13 @@ class EmergencyService : Service() {
 
         scope.launch {
             try {
-                // 1. 获取 GPS 位置（用 LocationManager，不依赖 Google Play Services）
+                // 1. 获取 GPS 位置 + 反向地理编码
                 val location = getLocation()
-                val address = if (location != null) "${location.latitude},${location.longitude}" else "位置获取失败"
+                val address = if (location != null) {
+                    reverseGeocode(location)
+                } else {
+                    "位置获取失败"
+                }
                 Log.i(TAG, "📍 位置: $address")
 
                 updateNotification("📍 位置已获取", "位置: $address\n正在发送求救…", true)
@@ -133,6 +139,40 @@ class EmergencyService : Service() {
      * 获取 GPS 位置 — 使用 Android 原生 LocationManager（不依赖 Google Play Services）
      * 高德地图定位需另外接入 SDK，现阶段用原生 GPS+网络双定位
      */
+
+    /**
+     * 反向地理编码：坐标 → 地址
+     * 用 Android Geocoder 转换，失败降级为坐标字符串
+     */
+    private fun reverseGeocode(location: Location): String {
+        return try {
+            val geocoder = Geocoder(this, Locale.getDefault())
+            val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val addr = addresses[0]
+                val sb = StringBuilder()
+                if (!addr.thoroughfare.isNullOrBlank()) sb.append(addr.thoroughfare)
+                if (!addr.featureName.isNullOrBlank()) {
+                    if (sb.isNotEmpty()) sb.append(" ")
+                    sb.append(addr.featureName)
+                }
+                if (!addr.locality.isNullOrBlank()) {
+                    if (sb.isNotEmpty()) sb.append("，")
+                    sb.append(addr.locality)
+                }
+                if (sb.isEmpty()) {
+                    "${location.latitude},${location.longitude}"
+                } else {
+                    "${sb}，(${location.latitude},${location.longitude})"
+                }
+            } else {
+                "${location.latitude},${location.longitude}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "反向地理编码失败: ${e.message}")
+            "${location.latitude},${location.longitude}"
+        }
+    }
     private suspend fun getLocation(): Location? = suspendCancellableCoroutine { cont ->
         var resumed = false
         val listener = object : LocationListener {

@@ -141,6 +141,15 @@ class VolumeKeyService : AccessibilityService() {
         }
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        // 被系统杀死时记录状态，下次打开 APP 时检测
+        getSharedPreferences("accessibility", MODE_PRIVATE)
+            .edit().putBoolean("was_killed", true).apply()
+        Log.w(TAG, "⚠ onUnbind — 无障碍服务被关闭")
+        // 返回 true 告诉系统我们处理了 unbind，系统可能重新绑定
+        return true
+    }
+
     override fun onInterrupt() {}
     override fun onDestroy() {
         runnable?.let { handler.removeCallbacks(it) }

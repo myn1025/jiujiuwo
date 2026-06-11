@@ -64,10 +64,12 @@ fun LoginScreen(
     val secureEmail: String = savedToken?.let { "" } ?: CredentialStore.getEmail(context) ?: ""
     val hasBiometric = secureToken != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
     var showBiometric by remember { mutableStateOf(hasBiometric) }
+    var biometricTrigger by remember { mutableIntStateOf(if (hasBiometric) 1 else 0) }
 
-    // Auto-trigger biometric on first render
-    LaunchedEffect(showBiometric) {
-        if (showBiometric && context is FragmentActivity) {
+    // Auto-trigger biometric on first render or button tap
+    LaunchedEffect(biometricTrigger) {
+        if (biometricTrigger > 0 && hasBiometric && context is FragmentActivity) {
+            showBiometric = true
             BiometricAuthUtils.authenticate(
                 activity = context as FragmentActivity,
                 onSuccess = {
@@ -101,7 +103,7 @@ fun LoginScreen(
             // Biometric login button
             if (hasBiometric) {
                 OutlinedButton(
-                    onClick = { showBiometric = true },
+                    onClick = { biometricTrigger++ },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF7C3AED)),
                     shape = RoundedCornerShape(12.dp),

@@ -19,15 +19,7 @@ import com.shouhu.guardian.ui.theme.isDarkMode
 
 class MainActivity : ComponentActivity() {
 
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
-
-    private val smsPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
-
-    private val locationPermissionLauncher = registerForActivityResult(
+    private val allPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
@@ -36,10 +28,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         title = ""
 
-        // 请求运行时权限
-        requestNotificationPermission()
-        requestSmsPermission()
-        requestLocationPermission()
+        // 一次性请求所有运行时权限
+        requestAllPermissions()
 
         val darkMode = isDarkMode(this)
         setContent {
@@ -55,26 +45,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
+    private fun requestAllPermissions() {
+        val missing = mutableListOf<String>()
+        // 通知权限 (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED
             ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                missing.add(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
-    }
-
-    private fun requestSmsPermission() {
+        // 短信权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+            missing.add(Manifest.permission.SEND_SMS)
         }
-    }
-
-    private fun requestLocationPermission() {
-        val missing = mutableListOf<String>()
+        // 定位权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -86,7 +73,7 @@ class MainActivity : ComponentActivity() {
             missing.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         if (missing.isNotEmpty()) {
-            locationPermissionLauncher.launch(missing.toTypedArray())
+            allPermissionsLauncher.launch(missing.toTypedArray())
         }
     }
 }
