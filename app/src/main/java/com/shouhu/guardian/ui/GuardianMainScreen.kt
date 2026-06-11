@@ -3,8 +3,6 @@ package com.shouhu.guardian.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -689,43 +687,39 @@ fun SettingsPanel(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Picovoice AccessKey
+            // 唤醒关键词
             Card(
                 colors = CardDefaults.cardColors(containerColor = c.cardBg),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("🔑 Picovoice Key", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("🔑 唤醒关键词", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "语音唤醒需 Picovoice 离线引擎。免费注册获取: console.picovoice.ai",
+                        "说关键词触发报警，多个用逗号隔开。支持中文。完全免费离线识别。",
                         color = c.onSurfaceVariant,
                         fontSize = 12.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
                     )
-                    var accessKey by remember {
-                        mutableStateOf(context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).getString("picovoice_access_key", "") ?: "")
+                    var keyword by remember {
+                        mutableStateOf(context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).getString("trigger_keyword", "救救我") ?: "救救我")
                     }
                     OutlinedTextField(
-                        value = accessKey,
-                        onValueChange = { accessKey = it },
-                        label = { Text("AccessKey") },
+                        value = keyword,
+                        onValueChange = { keyword = it },
+                        label = { Text("触发关键词") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     Button(
                         onClick = {
-                            context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit().putString("picovoice_access_key", accessKey).apply()
+                            context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
+                                .putString("trigger_keyword", keyword).apply()
                             if (triggerVoice) {
-                                context.stopService(Intent(context, WakeWordService::class.java))
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    val intent = Intent(context, WakeWordService::class.java)
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                        context.startForegroundService(intent)
-                                    } else {
-                                        context.startService(intent)
-                                    }
-                                }, 500)
+                                val intent = Intent(context, WakeWordService::class.java).apply {
+                                    action = WakeWordService.ACTION_RESTART
+                                }
+                                context.startService(intent)
                             }
                         },
                         modifier = Modifier.padding(top = 8.dp),

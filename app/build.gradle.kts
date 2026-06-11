@@ -99,8 +99,8 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
 
-    // Porcupine 语音唤醒（离线本地）
-    implementation("ai.picovoice:porcupine-android:3.0.3")
+    // Vosk 离线语音识别（免费、支持中文、自定义关键词）
+    implementation("com.alphacephei:vosk-android:0.3.47")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
