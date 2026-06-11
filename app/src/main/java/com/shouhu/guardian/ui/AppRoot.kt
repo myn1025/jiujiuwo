@@ -49,7 +49,8 @@ fun AppRoot() {
                     authToken = null
                     userEmail = ""
                     prefs.edit().remove("token").remove("email").apply()
-                    // 加密凭据保留不动 — 下次登录可用指纹恢复
+                    CredentialStore.clear(context)
+                    RetrofitClient.setToken(null)
                     screen = Screen.Login
                 }
             )

@@ -558,7 +558,8 @@ fun SettingsPanel(
             if (resp.isSuccessful) {
                 resp.body()?.let { s ->
                     safePassword = s.safePassword
-                    triggerVoice = s.triggerVoice
+                    // 语音唤醒强制默认关闭 — 需模型就绪后手动开启
+                    triggerVoice = false
                     triggerShake = s.triggerShake
                     autoRecord = s.autoRecord
                     autoGps = s.autoGps
@@ -755,7 +756,12 @@ fun SettingsPanel(
                     // 读取服务持久状态，防止切页后状态丢失
                     val currentServiceState = remember { mutableStateOf(wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: "") }
                     val isRestarting = remember { mutableStateOf(
-                        currentServiceState.value in listOf(WakeWordService.STATE_DOWNLOADING, WakeWordService.STATE_EXTRACTING, WakeWordService.STATE_INITIALIZING, "")
+                        when (currentServiceState.value) {
+                            WakeWordService.STATE_LISTENING, WakeWordService.STATE_ERROR, WakeWordService.STATE_WAITING_WIFI -> false
+                            WakeWordService.STATE_DOWNLOADING, WakeWordService.STATE_EXTRACTING, WakeWordService.STATE_INITIALIZING -> true
+                            "" -> false  // 状态未知（旧版本服务？），默认放行
+                            else -> false
+                        }
                     ) }
                     val restartError = remember { mutableStateOf(
                         if (currentServiceState.value == WakeWordService.STATE_ERROR) "语音唤醒服务异常" else null

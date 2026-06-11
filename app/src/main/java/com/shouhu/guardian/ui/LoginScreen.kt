@@ -60,44 +60,38 @@ fun LoginScreen(
     val fieldColors = if (darkTheme) darkFieldColors() else lightFieldColors()
 
     // Biometric：优先用 memory token，否则查加密凭据（退出登录后也能指纹恢复）
+    val fragmentActivity = remember {
+        var c: android.content.Context = context
+        while (c is android.content.ContextWrapper && c !is FragmentActivity) {
+            c = (c as android.content.ContextWrapper).baseContext
+        }
+        c as? FragmentActivity
+    }
     val secureToken: String? = savedToken ?: if (remember { CredentialStore.hasCredentials(context) }) CredentialStore.getToken(context) else null
     val secureEmail: String = savedToken?.let { "" } ?: CredentialStore.getEmail(context) ?: ""
-    val hasBiometric = secureToken != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
+    val hasBiometric = secureToken != null && fragmentActivity != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
     var isBiometricInProgress by remember { mutableStateOf(false) }
 
     /** 执行生物识别验证 */
     val doBiometricAuth = {
-        if (!isBiometricInProgress && hasBiometric) {
-            // 尝试获取 FragmentActivity（Context 可能被 ContextWrapper 包装）
-            val activity = when (context) {
-                is FragmentActivity -> context as FragmentActivity
-                is android.content.ContextWrapper -> {
-                    var base = (context as android.content.ContextWrapper).baseContext
-                    while (base is android.content.ContextWrapper && base !is FragmentActivity) {
-                        base = (base as android.content.ContextWrapper).baseContext
-                    }
-                    base as? FragmentActivity
-                }
-                else -> null
-            }
-            if (activity == null) {
-                errorMsg = "无法启动生物识别"
-            } else {
-                isBiometricInProgress = true
-                BiometricAuthUtils.authenticate(
-                    activity = activity,
-                    onSuccess = {
-                        isBiometricInProgress = false
-                        RetrofitClient.setToken(secureToken!!)
-                        onLoginSuccess(secureToken!!, secureEmail)
-                    },
-                    onError = { error ->
-                        isBiometricInProgress = false
-                        errorMsg = "验证失败: $error"
-                    },
-                    onFallback = { isBiometricInProgress = false }
-                )
-            }
+        val act = fragmentActivity
+        if (!isBiometricInProgress && hasBiometric && act != null) {
+            isBiometricInProgress = true
+            BiometricAuthUtils.authenticate(
+                activity = act,
+                onSuccess = {
+                    isBiometricInProgress = false
+                    RetrofitClient.setToken(secureToken!!)
+                    onLoginSuccess(secureToken!!, secureEmail)
+                },
+                onError = { error ->
+                    isBiometricInProgress = false
+                    errorMsg = "验证失败: $error"
+                },
+                onFallback = { isBiometricInProgress = false }
+            )
+        } else if (act == null && hasBiometric) {
+            errorMsg = "无法启动生物识别"
         }
     }
 

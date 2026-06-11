@@ -147,13 +147,21 @@ class WakeWordService : Service() {
             ACTION_RESTART -> {
                 pendingRestart = true
                 handler.post {
-                    stopListening()
-                    recognizer?.close()
-                    recognizer = null
-                    model = null
-                    pendingRestart = false
-                    loadSettings()
-                    ensureModelAndStart()
+                    try {
+                        stopListening()
+                        recognizer?.close()
+                        recognizer = null
+                        model?.close()
+                        model = null
+                    } catch (e: Exception) {
+                        Log.w(TAG, "清理旧识别器异常: ${e.message}")
+                    }
+                    // 加入短暂延迟避免 Vosk 原生库重载冲突
+                    handler.postDelayed({
+                        pendingRestart = false
+                        loadSettings()
+                        ensureModelAndStart()
+                    }, 500)
                 }
             }
             ACTION_DOWNLOAD_CONFIRM -> {
