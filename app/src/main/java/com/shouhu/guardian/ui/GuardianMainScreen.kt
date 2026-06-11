@@ -541,6 +541,7 @@ fun SettingsPanel(
     onToggleTheme: (Boolean) -> Unit
 ) {
     val wakeWordPrefs = LocalContext.current.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
+    val context = LocalContext.current
     var safePassword by remember { mutableStateOf("2580") }
     var triggerVoice by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_voice_enabled", false)) }
     var triggerShake by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_shake_enabled", false)) }
@@ -549,7 +550,6 @@ fun SettingsPanel(
     var useBiometric by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     // 加载设置
     LaunchedEffect(Unit) {
@@ -682,9 +682,13 @@ fun SettingsPanel(
                             context.startService(intent)
                         }
                     }
-                    // 模型状态指示
+                    // 模型状态指示（只在不监听且非就绪时显示进度）
                     val modelState = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
-                    if (!triggerVoice && modelState.isNotEmpty() && modelState != WakeWordService.STATE_LISTENING && modelState != "stopped") {
+                    val showModelStatus = modelState.isNotEmpty()
+                            && modelState != WakeWordService.STATE_LISTENING
+                            && modelState != "stopped"
+                            && triggerVoice.not()
+                    if (showModelStatus) {
                         Text(
                             when (modelState) {
                                 WakeWordService.STATE_DOWNLOADING -> "🔽 正在下载语音模型..."
