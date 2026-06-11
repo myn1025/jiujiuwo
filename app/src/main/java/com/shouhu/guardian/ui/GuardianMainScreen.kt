@@ -658,9 +658,8 @@ fun SettingsPanel(
                             val state = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
                             val ready = state == WakeWordService.STATE_LISTENING
                             if (!ready) {
-                                // 模型未就绪 → 拒绝开启，恢复开关
                                 triggerVoice = false
-                                // 触发模型下载
+                                // 首次启动 — 触发模型下载
                                 val intent = Intent(context, WakeWordService::class.java)
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                     context.startForegroundService(intent)
@@ -675,21 +674,19 @@ fun SettingsPanel(
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = wantOn)) } catch (_: Exception) {}
                         }
-                        // 启动或停止语音唤醒服务
-                        val intent = Intent(context, WakeWordService::class.java)
-                        if (wantOn) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                context.startForegroundService(intent)
-                            } else {
-                                context.startService(intent)
-                            }
+                        // 🔑 不杀服务 — 用 ACTION_START/STOP_LISTENING 切换（不关 Vosk，避免 JNI 崩溃）
+                        val intent = Intent(context, WakeWordService::class.java).apply {
+                            action = if (wantOn) WakeWordService.ACTION_START_LISTENING else WakeWordService.ACTION_STOP_LISTENING
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            context.startForegroundService(intent)
                         } else {
-                            context.stopService(intent)
+                            context.startService(intent)
                         }
                     }
                     // 模型状态指示
                     val modelState = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
-                    if (!triggerVoice && modelState.isNotEmpty() && modelState != WakeWordService.STATE_LISTENING) {
+                    if (!triggerVoice && modelState.isNotEmpty() && modelState != WakeWordService.STATE_LISTENING && modelState != "stopped") {
                         Text(
                             when (modelState) {
                                 WakeWordService.STATE_DOWNLOADING -> "🔽 正在下载语音模型..."
@@ -755,23 +752,19 @@ fun SettingsPanel(
                     // wakeWordPrefs 已在 SettingsPanel 顶部统一定义
                     // 读取服务持久状态，防止切页后状态丢失
                     val currentServiceState = remember { mutableStateOf(wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: "") }
-                    val isRestarting = remember { mutableStateOf(
-                        when (currentServiceState.value) {
-                            WakeWordService.STATE_LISTENING, WakeWordService.STATE_ERROR, WakeWordService.STATE_WAITING_WIFI -> false
-                            WakeWordService.STATE_DOWNLOADING, WakeWordService.STATE_EXTRACTING, WakeWordService.STATE_INITIALIZING -> true
-                            "" -> false  // 状态未知（旧版本服务？），默认放行
-                            else -> false
-                        }
-                    ) }
+                    // 🔑 isRestarting 设为派生值 — 每次 currentServiceState 变化自动重算
+                    // （不再用 remember{mutableStateOf(...)}，那只会算一次）
+                    val isRestarting = currentServiceState.value in listOf(
+                        WakeWordService.STATE_DOWNLOADING, WakeWordService.STATE_EXTRACTING, WakeWordService.STATE_INITIALIZING
+                    )
                     val restartError = remember { mutableStateOf(
                         if (currentServiceState.value == WakeWordService.STATE_ERROR) "语音唤醒服务异常" else null
                     ) }
 
-                    // 监听 WakeWordService 完成广播（处理持续的状态同步）
+                    // 监听 WakeWordService 完成广播
                     DisposableEffect(Unit) {
                         val receiver = object : BroadcastReceiver() {
                             override fun onReceive(ctx: Context?, intent: Intent?) {
-                                isRestarting.value = false
                                 when (intent?.action) {
                                     WakeWordService.ACTION_READY -> {
                                         restartError.value = null
@@ -802,29 +795,29 @@ fun SettingsPanel(
 
                     Button(
                         onClick = {
-                            if (isRestarting.value) return@Button
-                            isRestarting.value = true
+                            if (isRestarting) return@Button
                             restartError.value = null
+                            // 保存关键词到 SharedPreferences
                             context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
                                 .putString("trigger_keyword", keyword).apply()
-                            if (triggerVoice) {
-                                val intent = Intent(context, WakeWordService::class.java).apply {
-                                    action = WakeWordService.ACTION_RESTART
-                                }
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
+                            // 发送 ACTION_RESTART 让服务重载关键词 + 重启 SpeechService
+                            // （不关闭 Vosk 实例，避免 JNI 崩溃）
+                            val intent = Intent(context, WakeWordService::class.java).apply {
+                                action = WakeWordService.ACTION_RESTART
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(intent)
+                            } else {
+                                context.startService(intent)
                             }
                         },
                         modifier = Modifier.padding(top = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
-                        enabled = !isRestarting.value
+                        enabled = !isRestarting
                     ) {
                         Text(
                             when {
-                                isRestarting.value -> "⏳ 正在配置语音唤醒，请稍候..."
+                                isRestarting -> "⏳ 正在配置语音唤醒，请稍候..."
                                 restartError.value != null -> "❌ 失败: ${restartError.value}"
                                 else -> "保存并重启唤醒"
                             }
