@@ -21,6 +21,8 @@ import kotlin.math.sqrt
  * 算法：3次剧烈摇晃（加速度>2.5g）在2秒内 → 触发报警
  * 防误触：正常走路/跑步加速度<1.5g，丢手机<2.0g
  * 冷却：触发后5秒冷却期
+ *
+ * 保活：前台服务 + WakeLock
  */
 class ShakeService : Service() {
     companion object {
@@ -48,6 +50,11 @@ class ShakeService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         initSensor()
+        // 持有 WakeLock 确保锁屏后传感器仍活跃
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:ShakeLock")
+        wakeLock?.acquire(10 * 60 * 1000L) // 最长持有10分钟
+        Log.i(TAG, "摇一摇服务已启动，阈值=${SHAKE_THRESHOLD}g, 窗口=${SHAKE_WINDOW_MS}ms, 次数=${SHAKE_COUNT}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -127,7 +134,7 @@ class ShakeService : Service() {
         val z = event.values[2]
 
         // g 力 = sqrt(x²+y²+z²) / 重力加速度
-        val gForce = sqrt(x * x + y * y + z * z) / SensorManager.GRAVITY_EARTH
+        val gForce = sqrt((x * x + y * y + z * z).toDouble()).toFloat() / SensorManager.GRAVITY_EARTH
         val now = System.currentTimeMillis()
 
         // 低于阈值：忽略
@@ -135,6 +142,8 @@ class ShakeService : Service() {
 
         // 冷却期检查
         if (now - lastTriggerTime < COOLDOWN_MS) return
+
+        Log.i(TAG, "检测到剧烈运动: gForce=${gForce}, 时间=$now, 已记录次数=${shakeTimes.size + 1}")
 
         // 记录摇晃时间
         shakeTimes.add(now)

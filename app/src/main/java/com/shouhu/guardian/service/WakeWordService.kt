@@ -44,6 +44,10 @@ class WakeWordService : Service() {
 
         // 外部重启接口
         const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
+        // 通知 UI 模型就绪
+        const val ACTION_READY = "com.shouhu.guardian.action.WAKEWORD_READY"
+        const val ACTION_FAILED = "com.shouhu.guardian.action.WAKEWORD_FAILED"
+        const val EXTRA_ERROR = "error"
 
         // 非 WiFi 环境下载确认
         const val ACTION_DOWNLOAD_CONFIRM = "com.shouhu.guardian.action.DOWNLOAD_CONFIRM"
@@ -57,6 +61,7 @@ class WakeWordService : Service() {
     private var speechService: SpeechService? = null
     private var isListening = false
     private var pendingRestart = false
+    private var isForeground = false
 
     private var downloadThread: Thread? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -64,20 +69,28 @@ class WakeWordService : Service() {
     /** 唤醒词列表（从 SharedPreferences 读取） */
     private val recognitionListener = object : RecognitionListener {
         override fun onPartialResult(hypothesis: String) {
+            // 调试：输出所有识别结果用于排查
+            if (hypothesis.length > 10) Log.i(TAG, "partial: $hypothesis")
             checkForWakeWord(hypothesis)
         }
 
         override fun onResult(hypothesis: String) {
-            Log.d(TAG, "onResult: $hypothesis")
+            Log.i(TAG, "onResult: $hypothesis")
+            checkForWakeWord(hypothesis)
         }
 
         override fun onFinalResult(hypothesis: String) {
-            Log.d(TAG, "onFinalResult: $hypothesis")
-            speechService?.shutdown()
-            speechService = null
-            recognizer?.close()
-            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-            restartSpeechService()
+            Log.i(TAG, "onFinalResult: $hypothesis")
+            checkForWakeWord(hypothesis)
+            try {
+                speechService?.shutdown()
+                speechService = null
+                recognizer?.close()
+                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                restartSpeechService()
+            } catch (e: Exception) {
+                Log.e(TAG, "onFinalResult 恢复失败: ${e.message}")
+            }
         }
 
         override fun onError(e: Exception) {
@@ -115,6 +128,7 @@ class WakeWordService : Service() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("语音唤醒 加载中...", "准备中..."))
+        isForeground = true
         loadSettings()
         ensureModelAndStart()
     }
@@ -148,16 +162,23 @@ class WakeWordService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        pendingRestart = false
-        isListening = false
-        downloadThread = null
-        speechService?.shutdown()
-        speechService = null
-        recognizer?.close()
-        recognizer = null
-        model?.close()
-        model = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        try {
+            pendingRestart = false
+            isListening = false
+            downloadThread = null
+            speechService?.shutdown()
+            speechService = null
+            recognizer?.close()
+            recognizer = null
+            model?.close()
+            model = null
+            if (isForeground) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                isForeground = false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "onDestroy 异常: ${e.message}")
+        }
         super.onDestroy()
     }
 
@@ -288,7 +309,10 @@ class WakeWordService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "模型下载失败: ${e.message}")
-                handler.post { updateNotification("语音唤醒 下载失败", e.message ?: "请检查网络后重启服务") }
+                handler.post {
+                    updateNotification("语音唤醒 下载失败", e.message ?: "请检查网络后重启服务")
+                    sendBroadcast(Intent(ACTION_FAILED).putExtra(EXTRA_ERROR, e.message ?: "下载失败"))
+                }
             }
             downloadThread = null
         }.apply { name = "Vosk-ModelDownload"; start() }
@@ -364,11 +388,14 @@ class WakeWordService : Service() {
         try {
             model = Model(getModelDir())
             recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
-            Log.i(TAG, "Vosk 识别器初始化成功")
+            Log.i(TAG, "Vosk 识别器初始化成功 — 模型: $MODEL_DIR")
             startListening()
+            // 通知 UI：模型就绪
+            sendBroadcast(Intent(ACTION_READY))
         } catch (e: Exception) {
             Log.e(TAG, "识别器初始化失败: ${e.message}")
             updateNotification("语音唤醒 初始化失败", e.message ?: "请重启服务")
+            sendBroadcast(Intent(ACTION_FAILED).putExtra(EXTRA_ERROR, e.message))
         }
     }
 

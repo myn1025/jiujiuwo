@@ -1,7 +1,9 @@
 package com.shouhu.guardian.ui
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -714,28 +716,56 @@ fun SettingsPanel(
                         modifier = Modifier.fillMaxWidth()
                     )
                     val isRestarting = remember { mutableStateOf(false) }
+                    val restartError = remember { mutableStateOf<String?>(null) }
+
+                    // 监听 WakeWordService 完成广播
+                    DisposableEffect(Unit) {
+                        val receiver = object : BroadcastReceiver() {
+                            override fun onReceive(ctx: Context?, intent: Intent?) {
+                                isRestarting.value = false
+                                when (intent?.action) {
+                                    WakeWordService.ACTION_READY -> restartError.value = null
+                                    WakeWordService.ACTION_FAILED -> restartError.value = intent.getStringExtra(WakeWordService.EXTRA_ERROR) ?: "初始化失败"
+                                }
+                            }
+                        }
+                        val filter = IntentFilter().apply {
+                            addAction(WakeWordService.ACTION_READY)
+                            addAction(WakeWordService.ACTION_FAILED)
+                        }
+                        context.registerReceiver(receiver, filter)
+                        onDispose { context.unregisterReceiver(receiver) }
+                    }
+
                     Button(
                         onClick = {
                             if (isRestarting.value) return@Button
                             isRestarting.value = true
+                            restartError.value = null
                             context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
                                 .putString("trigger_keyword", keyword).apply()
                             if (triggerVoice) {
                                 val intent = Intent(context, WakeWordService::class.java).apply {
                                     action = WakeWordService.ACTION_RESTART
                                 }
-                                context.startService(intent)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
                             }
-                            // 8 秒后恢复按钮
-                            Handler(Looper.getMainLooper()).postDelayed({
-                                isRestarting.value = false
-                            }, 8000)
                         },
                         modifier = Modifier.padding(top = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
                         enabled = !isRestarting.value
                     ) {
-                        Text(if (isRestarting.value) "⏳ 正在配置语音唤醒，请稍候..." else "保存并重启唤醒")
+                        Text(
+                            when {
+                                isRestarting.value -> "⏳ 正在配置语音唤醒，请稍候..."
+                                restartError.value != null -> "❌ 失败: ${restartError.value}"
+                                else -> "保存并重启唤醒"
+                            }
+                        )
                     }
                 }
             }
