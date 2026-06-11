@@ -49,6 +49,15 @@ class WakeWordService : Service() {
         const val ACTION_FAILED = "com.shouhu.guardian.action.WAKEWORD_FAILED"
         const val EXTRA_ERROR = "error"
 
+        // SharedPreferences 状态键（UI 读取此值判断服务状态）
+        const val PREF_STATE = "service_state"
+        const val STATE_DOWNLOADING = "downloading"
+        const val STATE_EXTRACTING = "extracting"
+        const val STATE_INITIALIZING = "initializing"
+        const val STATE_LISTENING = "listening"
+        const val STATE_ERROR = "error"
+        const val STATE_WAITING_WIFI = "waiting_wifi"
+
         // 非 WiFi 环境下载确认
         const val ACTION_DOWNLOAD_CONFIRM = "com.shouhu.guardian.action.DOWNLOAD_CONFIRM"
         const val ACTION_DOWNLOAD_CANCEL = "com.shouhu.guardian.action.DOWNLOAD_CANCEL"
@@ -184,6 +193,12 @@ class WakeWordService : Service() {
 
     // ===== 设置 =====
 
+    private fun writeState(state: String) {
+        getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
+            .putString(PREF_STATE, state).apply()
+        Log.i(TAG, "状态变更: $state")
+    }
+
     private fun loadSettings() {
         val prefs = getSharedPreferences("wake_word", Context.MODE_PRIVATE)
         val raw = prefs.getString("trigger_keyword", "救救我").orEmpty()
@@ -236,6 +251,7 @@ class WakeWordService : Service() {
     private fun ensureModelAndStart() {
         if (modelExists()) {
             Log.i(TAG, "模型已存在，直接初始化")
+            writeState(STATE_INITIALIZING)
             initRecognizer()
             return
         }
@@ -243,10 +259,12 @@ class WakeWordService : Service() {
         if (isOnWifi()) {
             // WiFi 环境 — 直接下载
             Log.i(TAG, "WiFi 环境，直接开始下载 (~${MODEL_SIZE_MB}MB)")
+            writeState(STATE_DOWNLOADING)
             startModelDownload()
         } else {
             // 非 WiFi 环境 — 弹通知询问
             Log.w(TAG, "非 WiFi 环境，等待用户确认下载")
+            writeState(STATE_WAITING_WIFI)
             showDownloadPrompt()
         }
     }
@@ -299,17 +317,20 @@ class WakeWordService : Service() {
 
     /** 开始下载模型 */
     private fun startModelDownload() {
+        writeState(STATE_DOWNLOADING)
         updateNotification("语音唤醒 下载中...", "首次使用需下载语音模型 (~${MODEL_SIZE_MB}MB)")
         downloadThread = Thread {
             try {
                 downloadAndExtractModel()
                 handler.post {
+                    writeState(STATE_INITIALIZING)
                     updateNotification("语音唤醒 下载完成", "正在初始化...")
                     initRecognizer()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "模型下载失败: ${e.message}")
                 handler.post {
+                    writeState(STATE_ERROR)
                     updateNotification("语音唤醒 下载失败", e.message ?: "请检查网络后重启服务")
                     sendBroadcast(Intent(ACTION_FAILED).putExtra(EXTRA_ERROR, e.message ?: "下载失败"))
                 }
@@ -354,6 +375,7 @@ class WakeWordService : Service() {
         }
 
         handler.post { updateNotification("语音唤醒 解压中...", "正在解压语音模型") }
+        writeState(STATE_EXTRACTING)
 
         if (targetDir.exists()) targetDir.deleteRecursively()
         targetDir.mkdirs()
@@ -386,6 +408,7 @@ class WakeWordService : Service() {
 
     private fun initRecognizer() {
         try {
+            writeState(STATE_INITIALIZING)
             model = Model(getModelDir())
             recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
             Log.i(TAG, "Vosk 识别器初始化成功 — 模型: $MODEL_DIR")
@@ -394,6 +417,7 @@ class WakeWordService : Service() {
             sendBroadcast(Intent(ACTION_READY))
         } catch (e: Exception) {
             Log.e(TAG, "识别器初始化失败: ${e.message}")
+            writeState(STATE_ERROR)
             updateNotification("语音唤醒 初始化失败", e.message ?: "请重启服务")
             sendBroadcast(Intent(ACTION_FAILED).putExtra(EXTRA_ERROR, e.message))
         }
@@ -407,10 +431,12 @@ class WakeWordService : Service() {
             speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
             speechService?.startListening(recognitionListener)
             isListening = true
+            writeState(STATE_LISTENING)
             updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
             Log.i(TAG, "SpeechService 启动成功，等待唤醒词")
         } catch (e: Exception) {
             Log.e(TAG, "SpeechService 启动失败: ${e.message}")
+            writeState(STATE_ERROR)
             updateNotification("语音唤醒 启动失败", "请确认已授权麦克风权限并重启服务")
             isListening = false
             speechService?.shutdown()

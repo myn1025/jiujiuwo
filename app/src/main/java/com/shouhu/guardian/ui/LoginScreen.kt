@@ -67,10 +67,26 @@ fun LoginScreen(
 
     /** 执行生物识别验证 */
     val doBiometricAuth = {
-        if (!isBiometricInProgress && hasBiometric && context is FragmentActivity) {
+        if (!isBiometricInProgress && hasBiometric) {
+            // 尝试获取 FragmentActivity（Context 可能被 ContextWrapper 包装）
+            val activity = when (context) {
+                is FragmentActivity -> context as FragmentActivity
+                is android.content.ContextWrapper -> {
+                    var base = (context as android.content.ContextWrapper).baseContext
+                    while (base is android.content.ContextWrapper && base !is FragmentActivity) {
+                        base = (base as android.content.ContextWrapper).baseContext
+                    }
+                    base as? FragmentActivity
+                }
+                else -> null
+            }
+            if (activity == null) {
+                errorMsg = "无法启动生物识别"
+                return@doBiometricAuth
+            }
             isBiometricInProgress = true
             BiometricAuthUtils.authenticate(
-                activity = context as FragmentActivity,
+                activity = activity,
                 onSuccess = {
                     isBiometricInProgress = false
                     RetrofitClient.setToken(secureToken!!)

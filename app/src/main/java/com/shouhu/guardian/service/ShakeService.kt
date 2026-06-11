@@ -31,7 +31,7 @@ class ShakeService : Service() {
         const val CHANNEL_ID = "shake_service"
 
         // 检测参数
-        private const val SHAKE_THRESHOLD = 2.5f  // g 力阈值（正常活动<1.5g）
+        private const val SHAKE_THRESHOLD = 2.0f  // g 力阈值（正常活动<1.5g, 降低到2.0g以提高灵敏度）
         private const val SHAKE_WINDOW_MS = 2000L  // 时间窗口
         private const val SHAKE_COUNT = 3           // 需要多少次摇晃
         private const val COOLDOWN_MS = 5000L       // 冷却期
@@ -136,6 +136,11 @@ class ShakeService : Service() {
         // g 力 = sqrt(x²+y²+z²) / 重力加速度
         val gForce = sqrt((x * x + y * y + z * z).toDouble()).toFloat() / SensorManager.GRAVITY_EARTH
         val now = System.currentTimeMillis()
+
+        // 每 5 秒输出一次 debug 日志，确认传感器在工作
+        if (now % 5000 < 20) {
+            Log.d(TAG, "传感器活跃 — gForce=${"%.2f".format(gForce)} x=${"%.1f".format(x)} y=${"%.1f".format(y)} z=${"%.1f".format(z)}")
+        }
 
         // 低于阈值：忽略
         if (gForce < SHAKE_THRESHOLD) return

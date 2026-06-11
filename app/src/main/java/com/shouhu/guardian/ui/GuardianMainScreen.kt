@@ -540,6 +540,8 @@ fun SettingsPanel(
     darkTheme: Boolean,
     onToggleTheme: (Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    val wakeWordPrefs = context.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
     var safePassword by remember { mutableStateOf("2580") }
     var triggerVoice by remember { mutableStateOf(false) }
     var triggerShake by remember { mutableStateOf(false) }
@@ -650,7 +652,24 @@ fun SettingsPanel(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
-                    SwitchRow(c, "🎤 语音唤醒", "喊'紫守护救命'触发报警（需麦克风权限）", triggerVoice) { wantOn ->
+                    SwitchRow(c, "🎤 语音唤醒", "喊'${keyword}'触发报警（需麦克风权限）", triggerVoice) { wantOn ->
+                        if (wantOn) {
+                            // 开启前检查：模型是否就绪
+                            val state = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
+                            val ready = state == WakeWordService.STATE_LISTENING
+                            if (!ready) {
+                                // 模型未就绪 → 拒绝开启，恢复开关
+                                triggerVoice = false
+                                // 触发模型下载
+                                val intent = Intent(context, WakeWordService::class.java)
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
+                                return@SwitchRow
+                            }
+                        }
                         triggerVoice = wantOn
                         context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).edit().putBoolean("trigger_voice_enabled", wantOn).apply()
                         scope.launch {
@@ -659,7 +678,7 @@ fun SettingsPanel(
                         // 启动或停止语音唤醒服务
                         val intent = Intent(context, WakeWordService::class.java)
                         if (wantOn) {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 context.startForegroundService(intent)
                             } else {
                                 context.startService(intent)
@@ -667,6 +686,23 @@ fun SettingsPanel(
                         } else {
                             context.stopService(intent)
                         }
+                    }
+                    // 模型状态指示
+                    val modelState = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
+                    if (!triggerVoice && modelState.isNotEmpty() && modelState != WakeWordService.STATE_LISTENING) {
+                        Text(
+                            when (modelState) {
+                                WakeWordService.STATE_DOWNLOADING -> "🔽 正在下载语音模型..."
+                                WakeWordService.STATE_EXTRACTING -> "📦 正在解压语音模型..."
+                                WakeWordService.STATE_INITIALIZING -> "⚙️ 正在初始化语音识别..."
+                                WakeWordService.STATE_ERROR -> "❌ 语音唤醒服务异常"
+                                WakeWordService.STATE_WAITING_WIFI -> "📶 等待WiFi连接以下载模型"
+                                else -> "⏳ 语音模型未就绪"
+                            },
+                            color = if (modelState == WakeWordService.STATE_ERROR) c.errorColor else Color(0xFFF59E0B),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                     SwitchRow(c, "📳 摇一摇求救", "剧烈摇晃手机3次触发（防误触算法）", triggerShake) { wantOn ->
                         triggerShake = wantOn
@@ -715,17 +751,31 @@ fun SettingsPanel(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    val isRestarting = remember { mutableStateOf(false) }
-                    val restartError = remember { mutableStateOf<String?>(null) }
+                    // 模型状态
+                    // wakeWordPrefs 已在 SettingsPanel 顶部统一定义
+                    // 读取服务持久状态，防止切页后状态丢失
+                    val currentServiceState = remember { mutableStateOf(wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: "") }
+                    val isRestarting = remember { mutableStateOf(
+                        currentServiceState.value in listOf(WakeWordService.STATE_DOWNLOADING, WakeWordService.STATE_EXTRACTING, WakeWordService.STATE_INITIALIZING, "")
+                    ) }
+                    val restartError = remember { mutableStateOf(
+                        if (currentServiceState.value == WakeWordService.STATE_ERROR) "语音唤醒服务异常" else null
+                    ) }
 
-                    // 监听 WakeWordService 完成广播
+                    // 监听 WakeWordService 完成广播（处理持续的状态同步）
                     DisposableEffect(Unit) {
                         val receiver = object : BroadcastReceiver() {
                             override fun onReceive(ctx: Context?, intent: Intent?) {
                                 isRestarting.value = false
                                 when (intent?.action) {
-                                    WakeWordService.ACTION_READY -> restartError.value = null
-                                    WakeWordService.ACTION_FAILED -> restartError.value = intent.getStringExtra(WakeWordService.EXTRA_ERROR) ?: "初始化失败"
+                                    WakeWordService.ACTION_READY -> {
+                                        restartError.value = null
+                                        currentServiceState.value = WakeWordService.STATE_LISTENING
+                                    }
+                                    WakeWordService.ACTION_FAILED -> {
+                                        restartError.value = intent.getStringExtra(WakeWordService.EXTRA_ERROR) ?: "初始化失败"
+                                        currentServiceState.value = WakeWordService.STATE_ERROR
+                                    }
                                 }
                             }
                         }
