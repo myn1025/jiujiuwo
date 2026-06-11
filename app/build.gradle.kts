@@ -66,9 +66,9 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // 仅保留手机架构，剔除模拟器/x86的 .so（减少约 20MB）
+        // 剔除 x86 / x86_64 的 .so（模拟器架构，手机用不上）
         jniLibs {
-            pickFirsts += listOf()
+            excludes += listOf("**/x86/**", "**/x86_64/**")
         }
     }
 
