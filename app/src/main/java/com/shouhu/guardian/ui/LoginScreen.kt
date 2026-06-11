@@ -82,22 +82,22 @@ fun LoginScreen(
             }
             if (activity == null) {
                 errorMsg = "无法启动生物识别"
-                return@doBiometricAuth
+            } else {
+                isBiometricInProgress = true
+                BiometricAuthUtils.authenticate(
+                    activity = activity,
+                    onSuccess = {
+                        isBiometricInProgress = false
+                        RetrofitClient.setToken(secureToken!!)
+                        onLoginSuccess(secureToken!!, secureEmail)
+                    },
+                    onError = { error ->
+                        isBiometricInProgress = false
+                        errorMsg = "验证失败: $error"
+                    },
+                    onFallback = { isBiometricInProgress = false }
+                )
             }
-            isBiometricInProgress = true
-            BiometricAuthUtils.authenticate(
-                activity = activity,
-                onSuccess = {
-                    isBiometricInProgress = false
-                    RetrofitClient.setToken(secureToken!!)
-                    onLoginSuccess(secureToken!!, secureEmail)
-                },
-                onError = { error ->
-                    isBiometricInProgress = false
-                    errorMsg = "验证失败: $error"
-                },
-                onFallback = { isBiometricInProgress = false }
-            )
         }
     }
 

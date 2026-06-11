@@ -540,8 +540,7 @@ fun SettingsPanel(
     darkTheme: Boolean,
     onToggleTheme: (Boolean) -> Unit
 ) {
-    val context = LocalContext.current
-    val wakeWordPrefs = context.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
+    val wakeWordPrefs = LocalContext.current.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
     var safePassword by remember { mutableStateOf("2580") }
     var triggerVoice by remember { mutableStateOf(false) }
     var triggerShake by remember { mutableStateOf(false) }
@@ -652,7 +651,7 @@ fun SettingsPanel(
                         fontSize = 11.sp,
                         modifier = Modifier.padding(top = 2.dp)
                     )
-                    SwitchRow(c, "🎤 语音唤醒", "喊'${keyword}'触发报警（需麦克风权限）", triggerVoice) { wantOn ->
+                    SwitchRow(c, "🎤 语音唤醒", "喊关键词触发报警（需麦克风权限）", triggerVoice) { wantOn ->
                         if (wantOn) {
                             // 开启前检查：模型是否就绪
                             val state = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
