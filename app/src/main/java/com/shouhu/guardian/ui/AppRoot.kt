@@ -6,6 +6,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.shouhu.guardian.ui.theme.isDarkMode
 import com.shouhu.guardian.ui.theme.setDarkMode
 import com.shouhu.guardian.util.CredentialStore
+import com.shouhu.guardian.data.api.RetrofitClient
 
 @Composable
 fun AppRoot() {
