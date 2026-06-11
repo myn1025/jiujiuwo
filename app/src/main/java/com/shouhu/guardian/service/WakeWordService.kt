@@ -3,6 +3,8 @@ package com.shouhu.guardian.service
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -42,6 +44,12 @@ class WakeWordService : Service() {
 
         // 外部重启接口
         const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
+
+        // 非 WiFi 环境下载确认
+        const val ACTION_DOWNLOAD_CONFIRM = "com.shouhu.guardian.action.DOWNLOAD_CONFIRM"
+        const val ACTION_DOWNLOAD_CANCEL = "com.shouhu.guardian.action.DOWNLOAD_CANCEL"
+        private const val NOTIFICATION_ID_PROMPT = 2003
+        private const val MODEL_SIZE_MB = 42
     }
 
     private var model: Model? = null
@@ -67,16 +75,26 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_RESTART) {
-            pendingRestart = true
-            handler.post {
-                stopListening()
-                recognizer?.close()
-                recognizer = null
-                model = null
-                pendingRestart = false
-                loadSettings()
-                ensureModelAndStart()
+        when (intent?.action) {
+            ACTION_RESTART -> {
+                pendingRestart = true
+                handler.post {
+                    stopListening()
+                    recognizer?.close()
+                    recognizer = null
+                    model = null
+                    pendingRestart = false
+                    loadSettings()
+                    ensureModelAndStart()
+                }
+            }
+            ACTION_DOWNLOAD_CONFIRM -> {
+                cancelPromptNotification()
+                startModelDownload()
+            }
+            ACTION_DOWNLOAD_CANCEL -> {
+                cancelPromptNotification()
+                updateNotification("语音唤醒 等待WiFi", "请连接WiFi后重新开启语音唤醒，模型约${MODEL_SIZE_MB}MB")
             }
         }
         return START_STICKY
@@ -155,8 +173,67 @@ class WakeWordService : Service() {
             initRecognizer()
             return
         }
-        Log.w(TAG, "模型不存在，开始下载 (~42MB)")
-        updateNotification("语音唤醒 下载中...", "首次使用需下载语音模型 (~42MB)")
+        // 检测网络类型
+        if (isOnWifi()) {
+            // WiFi 环境 — 直接下载
+            Log.i(TAG, "WiFi 环境，直接开始下载 (~${MODEL_SIZE_MB}MB)")
+            startModelDownload()
+        } else {
+            // 非 WiFi 环境 — 弹通知询问
+            Log.w(TAG, "非 WiFi 环境，等待用户确认下载")
+            showDownloadPrompt()
+        }
+    }
+
+    /** 判断当前是否 WiFi 网络 */
+    private fun isOnWifi(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(network) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    /** 非 WiFi 环境 — 通知栏提示 */
+    private fun showDownloadPrompt() {
+        val confirmIntent = Intent(this, WakeWordService::class.java).apply {
+            action = ACTION_DOWNLOAD_CONFIRM
+        }
+        val cancelIntent = Intent(this, WakeWordService::class.java).apply {
+            action = ACTION_DOWNLOAD_CANCEL
+        }
+        val confirmPi = PendingIntent.getService(
+            this, 1, confirmIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val cancelPi = PendingIntent.getService(
+            this, 2, cancelIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("语音唤醒模型下载")
+            .setContentText("当前非WiFi环境，语音模型约${MODEL_SIZE_MB}MB，是否继续下载？")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setOngoing(true)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "当前非WiFi网络，语音唤醒需要下载约${MODEL_SIZE_MB}MB的离线语音模型。" +
+                "建议连接WiFi后重试以节省流量。")
+            )
+            .addAction(android.R.drawable.ic_media_play, "继续下载", confirmPi)
+            .addAction(android.R.drawable.ic_media_pause, "稍后连WiFi", cancelPi)
+            .build()
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID_PROMPT, notification)
+    }
+
+    /** 移除下载提示通知 */
+    private fun cancelPromptNotification() {
+        getSystemService(NotificationManager::class.java)
+            .cancel(NOTIFICATION_ID_PROMPT)
+    }
+
+    /** 开始下载模型 */
+    private fun startModelDownload() {
+        updateNotification("语音唤醒 下载中...", "首次使用需下载语音模型 (~${MODEL_SIZE_MB}MB)")
         downloadThread = Thread {
             try {
                 downloadAndExtractModel()
