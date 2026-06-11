@@ -67,9 +67,10 @@ fun LoginScreen(
         }
         c as? FragmentActivity
     }
-    val secureToken: String? = savedToken ?: if (remember { CredentialStore.hasCredentials(context) }) CredentialStore.getToken(context) else null
+    // 不缓存 credential 状态 — 每次重组都重新检查
+    val secureToken: String? = savedToken ?: CredentialStore.getToken(context)
     val secureEmail: String = savedToken?.let { "" } ?: CredentialStore.getEmail(context) ?: ""
-    val hasBiometric = secureToken != null && fragmentActivity != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
+    val hasBiometric = secureToken != null && fragmentActivity != null && BiometricAuthUtils.isBiometricAvailable(context)
     var isBiometricInProgress by remember { mutableStateOf(false) }
 
     /** 执行生物识别验证 */

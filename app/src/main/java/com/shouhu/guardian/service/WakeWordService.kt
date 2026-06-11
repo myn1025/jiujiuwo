@@ -141,10 +141,12 @@ class WakeWordService : Service() {
                 handler.post {
                     stopListening()
                     loadSettings()
+                    writeState(STATE_INITIALIZING)  // 🔑 通知 UI 按钮锁定
                     if (model != null && recognizer != null) {
                         updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
                         restartSpeechService()
                         writeState(STATE_LISTENING)
+                        sendBroadcast(Intent(ACTION_READY))  // 🔑 通知 UI 按钮解锁
                     }
                 }
             }

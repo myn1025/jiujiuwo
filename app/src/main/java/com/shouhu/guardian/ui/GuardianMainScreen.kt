@@ -542,8 +542,8 @@ fun SettingsPanel(
 ) {
     val wakeWordPrefs = LocalContext.current.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
     var safePassword by remember { mutableStateOf("2580") }
-    var triggerVoice by remember { mutableStateOf(false) }
-    var triggerShake by remember { mutableStateOf(false) }
+    var triggerVoice by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_voice_enabled", false)) }
+    var triggerShake by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_shake_enabled", false)) }
     var autoRecord by remember { mutableStateOf(true) }
     var autoGps by remember { mutableStateOf(true) }
     var useBiometric by remember { mutableStateOf(false) }
@@ -558,8 +558,6 @@ fun SettingsPanel(
             if (resp.isSuccessful) {
                 resp.body()?.let { s ->
                     safePassword = s.safePassword
-                    // 语音唤醒强制默认关闭 — 需模型就绪后手动开启
-                    triggerVoice = false
                     triggerShake = s.triggerShake
                     autoRecord = s.autoRecord
                     autoGps = s.autoGps
@@ -718,6 +716,35 @@ fun SettingsPanel(
                         } else {
                             context.stopService(intent)
                         }
+                    }
+
+                    // 🧪 一键测试触发按钮
+                    Spacer(Modifier.height(8.dp))
+                    var testClicked by remember { mutableStateOf(false) }
+                    Button(
+                        onClick = {
+                            testClicked = true
+                            val testIntent = Intent(context, EmergencyService::class.java).apply {
+                                action = EmergencyService.ACTION_TRIGGER
+                                putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "manual_test")
+                            }
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                context.startForegroundService(testIntent)
+                            } else {
+                                context.startService(testIntent)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (testClicked) Color(0xFFEF4444).copy(alpha = 0.15f) else Color(0xFF10B981).copy(alpha = 0.15f)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            if (testClicked) "✅ 已发送测试报警，请检查通知栏" else "🧪 一键测试触发报警",
+                            color = if (testClicked) Color(0xFFEF4444) else Color(0xFF10B981),
+                            fontSize = 13.sp
+                        )
                     }
                 }
             }
