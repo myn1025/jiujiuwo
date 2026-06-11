@@ -316,12 +316,20 @@ class WakeWordService : Service() {
                 if (pct > lastPct) {
                     lastPct = pct
                     val p = pct
-                    handler.post { updateNotification("语音唤醒 下载中...", "$p% ($MODEL_DIR)") }
+                    handler.post { updateNotification("语音唤醒 下载中...", "$p% (${MODEL_DIR})") }
                 }
             }
         }
         output.close(); input.close(); conn.disconnect()
         Log.i(TAG, "下载完成: ${cacheZip.length()} bytes")
+
+        // 校验文件
+        if (cacheZip.length() < 1024 * 1024) {
+            cacheZip.delete()
+            throw IOException("模型文件异常（${cacheZip.length() / 1024}KB），可能下载中断，请重试")
+        }
+
+        handler.post { updateNotification("语音唤醒 解压中...", "正在解压语音模型") }
 
         if (targetDir.exists()) targetDir.deleteRecursively()
         targetDir.mkdirs()
@@ -341,6 +349,12 @@ class WakeWordService : Service() {
         }
         zis.close()
         cacheZip.delete()
+
+        // 校验关键文件
+        if (!File(targetDir, "am/final.mdl").exists()) {
+            throw IOException("模型解压不完整（缺少 am/final.mdl），请重启服务重试")
+        }
+
         Log.i(TAG, "模型解压完成: ${targetDir.absolutePath}")
     }
 
@@ -362,11 +376,19 @@ class WakeWordService : Service() {
 
     private fun startListening() {
         if (isListening || recognizer == null) return
-
-        isListening = true
-        speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
-        speechService?.startListening(recognitionListener)
-        updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
+        try {
+            speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
+            speechService?.startListening(recognitionListener)
+            isListening = true
+            updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
+            Log.i(TAG, "SpeechService 启动成功，等待唤醒词")
+        } catch (e: Exception) {
+            Log.e(TAG, "SpeechService 启动失败: ${e.message}")
+            updateNotification("语音唤醒 启动失败", "请确认已授权麦克风权限并重启服务")
+            isListening = false
+            speechService?.shutdown()
+            speechService = null
+        }
     }
 
     private fun restartSpeechService() {

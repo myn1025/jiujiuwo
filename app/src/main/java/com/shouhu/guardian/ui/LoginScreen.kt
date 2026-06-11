@@ -63,27 +63,30 @@ fun LoginScreen(
     val secureToken: String? = savedToken ?: if (remember { CredentialStore.hasCredentials(context) }) CredentialStore.getToken(context) else null
     val secureEmail: String = savedToken?.let { "" } ?: CredentialStore.getEmail(context) ?: ""
     val hasBiometric = secureToken != null && remember { BiometricAuthUtils.isBiometricAvailable(context) }
-    var showBiometric by remember { mutableStateOf(hasBiometric) }
-    var biometricTrigger by remember { mutableIntStateOf(if (hasBiometric) 1 else 0) }
+    var isBiometricInProgress by remember { mutableStateOf(false) }
 
-    // Auto-trigger biometric on first render or button tap
-    LaunchedEffect(biometricTrigger) {
-        if (biometricTrigger > 0 && hasBiometric && context is FragmentActivity) {
-            showBiometric = true
-            BiometricAuthUtils.authenticate(
-                activity = context as FragmentActivity,
-                onSuccess = {
-                    showBiometric = false
-                    RetrofitClient.setToken(secureToken!!)
-                    onLoginSuccess(secureToken!!, secureEmail)
-                },
-                onError = { error ->
-                    showBiometric = false
-                    errorMsg = "验证失败: $error"
-                },
-                onFallback = { showBiometric = false }
-            )
-        }
+    /** 执行生物识别验证 */
+    val doBiometricAuth = {
+        if (isBiometricInProgress || !hasBiometric || context !is FragmentActivity) return@let
+        isBiometricInProgress = true
+        BiometricAuthUtils.authenticate(
+            activity = context as FragmentActivity,
+            onSuccess = {
+                isBiometricInProgress = false
+                RetrofitClient.setToken(secureToken!!)
+                onLoginSuccess(secureToken!!, secureEmail)
+            },
+            onError = { error ->
+                isBiometricInProgress = false
+                errorMsg = "验证失败: $error"
+            },
+            onFallback = { isBiometricInProgress = false }
+        )
+    }
+
+    // 首次进入：有凭据则自动弹出指纹
+    LaunchedEffect(Unit) {
+        if (hasBiometric) doBiometricAuth()
     }
 
     Box(
@@ -103,7 +106,7 @@ fun LoginScreen(
             // Biometric login button
             if (hasBiometric) {
                 OutlinedButton(
-                    onClick = { biometricTrigger++ },
+                    onClick = { doBiometricAuth() },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF7C3AED)),
                     shape = RoundedCornerShape(12.dp),
