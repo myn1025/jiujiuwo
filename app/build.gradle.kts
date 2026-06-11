@@ -66,6 +66,20 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        // 仅保留手机架构，剔除模拟器/x86的 .so（减少约 20MB）
+        jniLibs {
+            pickFirsts += listOf()
+        }
+    }
+
+    // 按 ABI 分包 — 核心优化：APK 体积从 54MB 降至 25-35MB
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
+        }
     }
 }
 
