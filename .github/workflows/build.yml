@@ -42,11 +42,11 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
-      - name: Upload Debug APK
+      - name: Upload Debug APKs
         uses: actions/upload-artifact@v4
         with:
           name: jiujiuwo-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/app-*-debug.apk
 
       - name: Build Release APK (if keystore available)
         if: env.KEYSTORE_BASE64 != ''
@@ -59,9 +59,9 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
           ./gradlew assembleRelease
 
-      - name: Upload Release APK
+      - name: Upload Release APKs
         if: env.KEYSTORE_BASE64 != ''
         uses: actions/upload-artifact@v4
         with:
           name: jiujiuwo-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/app-*-release.apk
