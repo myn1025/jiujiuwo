@@ -3,14 +3,13 @@ package com.shouhu.guardian.service
 import android.app.*
 import android.content.Context
 import android.content.Intent
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.shouhu.guardian.R
 import org.vosk.*
+import org.vosk.android.RecognitionListener
+import org.vosk.android.SpeechService
 import org.json.JSONObject
 import java.io.*
 import java.net.HttpURLConnection
@@ -19,12 +18,14 @@ import java.net.URL
 /**
  * 语音唤醒服务 — 基于 Vosk 离线语音识别
  *
+ * 使用 Vosk Android 官方的 SpeechService 包装类，自动处理
+ * AudioRecord + Recognizer + 多帧流式识别全链路。
+ *
  * 特性：
- * - 完全免费，无试用期限制
+ * - 完全免费（Apache 2.0），无试用期限制
  * - 纯本地运行，无需联网（仅首次下载模型）
- * - 支持中文触发关键词（用户可自定义）
- * - 可识别多个关键词（逗号分隔）
- * - 前台服务+低优先级通知，关闭APP仍运行
+ * - 支持中文触发关键词（用户可自定义，逗号分隔多关键词）
+ * - 前台服务 + 低优先级通知，APP 关闭仍运行
  *
  * 模型：vosk-model-small-cn-0.22（~42MB，首次使用自动下载）
  * 下载链接：https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip
@@ -39,29 +40,23 @@ class WakeWordService : Service() {
         private const val MODEL_ZIP = "$MODEL_DIR.zip"
         private const val MODEL_URL = "https://alphacephei.com/vosk/models/$MODEL_ZIP"
 
-        // 每次识别帧大小（400 samples = 25ms at 16kHz），byte[] = FRAME_LEN * 2
-        private const val FRAME_LEN = 400
-
         // 外部重启接口
         const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
     }
 
-    // 服务状态
     private var model: Model? = null
     private var recognizer: Recognizer? = null
-    private var audioRecord: AudioRecord? = null
+    private var speechService: SpeechService? = null
     private var isListening = false
     private var pendingRestart = false
 
-    // 线程
-    private var recordThread: Thread? = null
     private var downloadThread: Thread? = null
+    private val handler = Handler(Looper.getMainLooper())
 
-    // 唤醒词列表（从 SharedPreferences 读取）
+    /** 唤醒词列表（从 SharedPreferences 读取） */
     private var wakeWords: List<String> = listOf("救救我")
 
-    // 回调重试锁
-    private val handler = Handler(Looper.getMainLooper())
+    // ===== 生命周期 =====
 
     override fun onCreate() {
         super.onCreate()
@@ -93,13 +88,8 @@ class WakeWordService : Service() {
         pendingRestart = false
         isListening = false
         downloadThread = null
-        recordThread?.interrupt()
-        recordThread = null
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (_: Exception) {}
-        audioRecord = null
+        speechService?.shutdown()
+        speechService = null
         recognizer?.close()
         recognizer = null
         model?.close()
@@ -109,6 +99,7 @@ class WakeWordService : Service() {
     }
 
     // ===== 设置 =====
+
     private fun loadSettings() {
         val prefs = getSharedPreferences("wake_word", Context.MODE_PRIVATE)
         val raw = prefs.getString("trigger_keyword", "救救我").orEmpty()
@@ -118,18 +109,13 @@ class WakeWordService : Service() {
     }
 
     // ===== 通知 =====
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "语音唤醒",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "语音唤醒持续监听"
-                setShowBadge(false)
-            }
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(channel)
+            val ch = NotificationChannel(
+                CHANNEL_ID, "语音唤醒", NotificationManager.IMPORTANCE_LOW
+            ).apply { setShowBadge(false) }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
         }
     }
 
@@ -150,18 +136,17 @@ class WakeWordService : Service() {
     }
 
     private fun updateNotification(title: String, text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(title, text))
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(title, text))
     }
 
     // ===== 模型管理 =====
-    private fun getModelDir(): String {
-        return "${filesDir.absolutePath}/$MODEL_DIR"
-    }
+
+    private fun getModelDir() = "${filesDir.absolutePath}/$MODEL_DIR"
 
     private fun modelExists(): Boolean {
         val dir = File(getModelDir())
-        return dir.exists() && dir.isDirectory && File(dir, "am").exists()
+        return dir.exists() && File(dir, "am").exists()
     }
 
     private fun ensureModelAndStart() {
@@ -170,7 +155,6 @@ class WakeWordService : Service() {
             initRecognizer()
             return
         }
-
         Log.w(TAG, "模型不存在，开始下载 (~42MB)")
         updateNotification("语音唤醒 下载中...", "首次使用需下载语音模型 (~42MB)")
         downloadThread = Thread {
@@ -182,15 +166,10 @@ class WakeWordService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "模型下载失败: ${e.message}")
-                handler.post {
-                    updateNotification("语音唤醒 下载失败", e.message ?: "请检查网络后重启服务")
-                }
+                handler.post { updateNotification("语音唤醒 下载失败", e.message ?: "请检查网络后重启服务") }
             }
             downloadThread = null
-        }.apply {
-            name = "Vosk-ModelDownload"
-            start()
-        }
+        }.apply { name = "Vosk-ModelDownload"; start() }
     }
 
     @Throws(IOException::class)
@@ -198,80 +177,57 @@ class WakeWordService : Service() {
         val cacheZip = File(cacheDir, MODEL_ZIP)
         val targetDir = File(getModelDir())
 
-        // 下载 ZIP
-        val url = URL(MODEL_URL)
-        val conn = url.openConnection() as HttpURLConnection
-        conn.apply {
-            connectTimeout = 15000
-            readTimeout = 30000
+        val conn = (URL(MODEL_URL).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000; readTimeout = 30000
         }
         conn.connect()
-
-        val totalBytes = conn.contentLengthLong
+        val total = conn.contentLengthLong
         val input = conn.inputStream
         val output = FileOutputStream(cacheZip)
         val buf = ByteArray(8192)
-        var downloaded = 0L
-        var lastProgress = 0
-
+        var done = 0L; var lastPct = 0
         while (true) {
-            val read = input.read(buf)
-            if (read < 0) break
-            output.write(buf, 0, read)
-            downloaded += read
-            if (totalBytes > 0) {
-                val pct = (downloaded * 100 / totalBytes).toInt()
-                if (pct > lastProgress) {
-                    lastProgress = pct
-                    val progressPct = pct
-                    handler.post {
-                        updateNotification("语音唤醒 下载中...", "$progressPct% ($MODEL_DIR)")
-                    }
+            val n = input.read(buf); if (n < 0) break
+            output.write(buf, 0, n); done += n
+            if (total > 0) {
+                val pct = (done * 100 / total).toInt()
+                if (pct > lastPct) {
+                    lastPct = pct
+                    val p = pct
+                    handler.post { updateNotification("语音唤醒 下载中...", "$p% ($MODEL_DIR)") }
                 }
             }
         }
-        output.close()
-        input.close()
-        conn.disconnect()
-
+        output.close(); input.close(); conn.disconnect()
         Log.i(TAG, "下载完成: ${cacheZip.length()} bytes")
 
-        // 解压到目标目录
         if (targetDir.exists()) targetDir.deleteRecursively()
         targetDir.mkdirs()
-
         val zis = java.util.zip.ZipInputStream(FileInputStream(cacheZip))
         var entry = zis.nextEntry
         while (entry != null) {
-            // 跳过 zip 的根目录前缀（vosk-model-small-cn-0.22/）
-            val relativeName = entry.name.substringAfter("/")
-            if (relativeName.isNotEmpty()) {
-                val outFile = File(targetDir, relativeName)
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile.mkdirs()
-                    FileOutputStream(outFile).use { fos ->
-                        zis.copyTo(fos)
-                    }
+            val rel = entry.name.substringAfter("/")
+            if (rel.isNotEmpty()) {
+                val f = File(targetDir, rel)
+                if (entry.isDirectory) f.mkdirs()
+                else {
+                    f.parentFile?.mkdirs()
+                    FileOutputStream(f).use { zis.copyTo(it) }
                 }
             }
-            zis.closeEntry()
-            entry = zis.nextEntry
+            zis.closeEntry(); entry = zis.nextEntry
         }
         zis.close()
-
-        // 删除 ZIP
         cacheZip.delete()
-
         Log.i(TAG, "模型解压完成: ${targetDir.absolutePath}")
     }
 
     // ===== 识别器初始化 =====
+
     private fun initRecognizer() {
         try {
             model = Model(getModelDir())
-            recognizer = Recognizer(model, SAMPLE_RATE.toFloat())
+            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
             Log.i(TAG, "Vosk 识别器初始化成功")
             startListening()
         } catch (e: Exception) {
@@ -280,130 +236,121 @@ class WakeWordService : Service() {
         }
     }
 
-    // ===== 音频录制 =====
+    // ===== 监听启动（使用官方 SpeechService） =====
+
     private fun startListening() {
-        if (isListening) return
-        if (recognizer == null) {
-            Log.e(TAG, "识别器未初始化，无法启动监听")
-            return
-        }
-
-        val minBuf = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf == AudioRecord.ERROR || minBuf == AudioRecord.ERROR_BAD_VALUE) {
-            Log.e(TAG, "AudioRecord 缓冲区计算失败")
-            updateNotification("语音唤醒 启动失败", "AudioRecord 初始化失败")
-            return
-        }
-
-        try {
-            audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                minBuf.coerceAtLeast(FRAME_LEN * 2)
-            )
-        } catch (e: SecurityException) {
-            Log.e(TAG, "麦克风权限被拒绝", e)
-            updateNotification("语音唤醒 无权限", "请允许麦克风权限")
-            return
-        } catch (e: Exception) {
-            Log.e(TAG, "AudioRecord 创建失败", e)
-            updateNotification("语音唤醒 启动失败", e.message ?: "AudioRecord 异常")
-            return
-        }
-
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord 未初始化")
-            audioRecord?.release()
-            audioRecord = null
-            return
-        }
+        if (isListening || recognizer == null) return
 
         isListening = true
-        audioRecord?.startRecording()
+        speechService = SpeechService(object : RecognitionListener {
+            override fun onPartialResult(hypothesis: String) {
+                checkForWakeWord(hypothesis)
+            }
 
-        updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
+            override fun onResult(hypothesis: String) {
+                Log.d(TAG, "onResult: $hypothesis")
+            }
 
-        recordThread = Thread {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
-            val frame = ByteArray(FRAME_LEN * 2)
+            override fun onFinalResult(hypothesis: String) {
+                Log.d(TAG, "onFinalResult: $hypothesis")
+                // 最终结果达到后自动重置识别器
+                speechService?.shutdown()
+                speechService = null
+                // 创建新的 recognizer 重新开始
+                recognizer?.close()
+                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                restartSpeechService()
+            }
 
-            while (isListening && !Thread.interrupted()) {
-                try {
-                    val bytesRead = audioRecord?.read(frame, 0, frame.size) ?: -1
-                    if (bytesRead <= 0) {
-                        // 短暂休眠避免 CPU 空转
-                        try { Thread.sleep(10) } catch (_: InterruptedException) { break }
-                        continue
-                    }
-
-                    val isFinal = recognizer?.acceptWaveform(frame, bytesRead) ?: continue
-
-                    val jsonStr = if (isFinal) {
-                        recognizer?.result ?: ""
-                    } else {
-                        recognizer?.partialResult ?: ""
-                    }
-
-                    if (jsonStr.isNotEmpty() && checkForWakeWord(jsonStr)) {
-                        break // 触发报警后退出线程
-                    }
-                } catch (e: Exception) {
-                    if (isListening) {
-                        Log.e(TAG, "识别循环异常", e)
-                    }
-                    break
+            override fun onError(e: Exception) {
+                Log.e(TAG, "SpeechService 错误: ${e.message}")
+                if (isListening && !pendingRestart) {
+                    // 尝试自动恢复
+                    handler.postDelayed({
+                        if (isListening && !pendingRestart) {
+                            Log.w(TAG, "SpeechService 自动恢复")
+                            speechService?.shutdown()
+                            speechService = null
+                            recognizer?.close()
+                            recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                            restartSpeechService()
+                        }
+                    }, 1000)
                 }
             }
 
-            Log.i(TAG, "录音线程结束")
-            recognizer?.reset()
-        }.apply {
-            name = "Vosk-AudioThread"
-            start()
-        }
+            override fun onTimeout() {
+                Log.d(TAG, "onTimeout — 重置识别器")
+                speechService?.shutdown()
+                speechService = null
+                recognizer?.close()
+                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                restartSpeechService()
+            }
+        }, SAMPLE_RATE.toFloat())
+
+        speechService?.startListening(recognizer!!)
+        updateNotification("语音唤醒 监听中", "关键词: ${wakeWords.joinToString(", ")}")
+    }
+
+    private fun restartSpeechService() {
+        if (!isListening || pendingRestart) return
+        speechService = SpeechService(object : RecognitionListener {
+            override fun onPartialResult(hypothesis: String) {
+                checkForWakeWord(hypothesis)
+            }
+
+            override fun onResult(hypothesis: String) {}
+
+            override fun onFinalResult(hypothesis: String) {
+                speechService?.shutdown()
+                speechService = null
+                recognizer?.close()
+                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                restartSpeechService()
+            }
+
+            override fun onError(e: Exception) {
+                Log.e(TAG, "SpeechService 错误", e)
+            }
+
+            override fun onTimeout() {
+                speechService?.shutdown()
+                speechService = null
+                recognizer?.close()
+                recognizer = Recognizer(model!!, SAMPLE_RATE.toFloat())
+                restartSpeechService()
+            }
+        }, SAMPLE_RATE.toFloat())
+        speechService?.startListening(recognizer!!)
     }
 
     private fun stopListening() {
         isListening = false
-        recordThread?.interrupt()
-        recordThread = null
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-        } catch (_: Exception) {}
-        audioRecord = null
+        speechService?.shutdown()
+        speechService = null
     }
 
     // ===== 关键词匹配 =====
-    private fun checkForWakeWord(jsonStr: String): Boolean {
-        return try {
-            val json = JSONObject(jsonStr)
-            // 检查 partial（部分识别）和 text（最终结果）
-            val text = json.optString("partial", "")
-                .ifEmpty { json.optString("text", "") }
 
-            if (text.isBlank()) return false
+    private fun checkForWakeWord(jsonStr: String) {
+        try {
+            val text = JSONObject(jsonStr).optString("partial", "")
+                .ifEmpty { JSONObject(jsonStr).optString("text", "") }
+            if (text.isBlank()) return
 
             for (word in wakeWords) {
                 if (text.contains(word)) {
                     Log.w(TAG, "⚡ 检测到唤醒词 '$word' 在 \"$text\"")
                     handler.post { triggerEmergency() }
-                    return true
+                    return
                 }
             }
-            false
-        } catch (e: Exception) {
-            false
-        }
+        } catch (_: Exception) {}
     }
 
     // ===== 触发报警 =====
+
     private fun triggerEmergency() {
         try {
             val intent = Intent(this, EmergencyService::class.java).apply {
@@ -419,6 +366,4 @@ class WakeWordService : Service() {
             Log.e(TAG, "触发 EmergencyService 失败: ${e.message}")
         }
     }
-
 }
-
