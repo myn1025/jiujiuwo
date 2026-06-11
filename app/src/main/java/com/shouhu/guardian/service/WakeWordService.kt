@@ -39,8 +39,11 @@ class WakeWordService : Service() {
         private const val MODEL_ZIP = "$MODEL_DIR.zip"
         private const val MODEL_URL = "https://alphacephei.com/vosk/models/$MODEL_ZIP"
 
-        // 每次 acceptWaveform 的帧大小（400 samples = 25ms at 16kHz）
+        // 每次识别帧大小（400 samples = 25ms at 16kHz），byte[] = FRAME_LEN * 2
         private const val FRAME_LEN = 400
+
+        // 外部重启接口
+        const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
     }
 
     // 服务状态
@@ -328,18 +331,18 @@ class WakeWordService : Service() {
 
         recordThread = Thread {
             android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)
-            val frame = ShortArray(FRAME_LEN)
+            val frame = ByteArray(FRAME_LEN * 2)
 
             while (isListening && !Thread.interrupted()) {
                 try {
-                    val nread = audioRecord?.read(frame, 0, FRAME_LEN) ?: -1
-                    if (nread <= 0) {
+                    val bytesRead = audioRecord?.read(frame, 0, frame.size) ?: -1
+                    if (bytesRead <= 0) {
                         // 短暂休眠避免 CPU 空转
                         try { Thread.sleep(10) } catch (_: InterruptedException) { break }
                         continue
                     }
 
-                    val isFinal = recognizer?.acceptWaveform(frame, nread) ?: continue
+                    val isFinal = recognizer?.acceptWaveform(frame, bytesRead) ?: continue
 
                     val jsonStr = if (isFinal) {
                         recognizer?.result ?: ""
@@ -417,8 +420,5 @@ class WakeWordService : Service() {
         }
     }
 
-    // ===== 外部重启接口 =====
-    companion object {
-        const val ACTION_RESTART = "com.shouhu.guardian.action.RESTART_WAKE_WORD"
-    }
 }
+
