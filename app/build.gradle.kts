@@ -99,6 +99,9 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.34.0")
 
+    // Porcupine 语音唤醒（离线本地）
+    implementation("ai.picovoice:porcupine-android:3.0.3")
+
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

@@ -62,16 +62,16 @@ data class EmergencyResponse(
 // ====== 设置 ======
 data class SettingsResponse(
     @SerializedName("safe_password") val safePassword: String,
-    @SerializedName("trigger_volume_key") val triggerVolumeKey: Boolean,
     @SerializedName("trigger_voice") val triggerVoice: Boolean,
+    @SerializedName("trigger_shake") val triggerShake: Boolean,
     @SerializedName("trigger_widget") val triggerWidget: Boolean,
     @SerializedName("auto_record") val autoRecord: Boolean,
     @SerializedName("auto_gps") val autoGps: Boolean
 )
 data class SettingsUpdateRequest(
     @SerializedName("safe_password") val safePassword: String? = null,
-    @SerializedName("trigger_volume_key") val triggerVolumeKey: Boolean? = null,
     @SerializedName("trigger_voice") val triggerVoice: Boolean? = null,
+    @SerializedName("trigger_shake") val triggerShake: Boolean? = null,
     @SerializedName("trigger_widget") val triggerWidget: Boolean? = null,
     @SerializedName("auto_record") val autoRecord: Boolean? = null,
     @SerializedName("auto_gps") val autoGps: Boolean? = null

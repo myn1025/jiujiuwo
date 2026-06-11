@@ -2,6 +2,9 @@ package com.shouhu.guardian.ui
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,17 +20,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import com.shouhu.guardian.service.EmergencyService
-import com.shouhu.guardian.service.VolumeKeyService
-import com.shouhu.guardian.util.AccessibilityUtils
+import com.shouhu.guardian.service.ShakeService
+import com.shouhu.guardian.service.WakeWordService
 import kotlinx.coroutines.launch
 
 // 主题感知色板
@@ -539,28 +539,24 @@ fun SettingsPanel(
     onToggleTheme: (Boolean) -> Unit
 ) {
     var safePassword by remember { mutableStateOf("2580") }
-    var triggerVolume by remember { mutableStateOf(false) }
     var triggerVoice by remember { mutableStateOf(false) }
+    var triggerShake by remember { mutableStateOf(false) }
     var autoRecord by remember { mutableStateOf(true) }
     var autoGps by remember { mutableStateOf(true) }
-    var accessibilityEnabled by remember { mutableStateOf(false) }
-    var showAccessibilityDialog by remember { mutableStateOf(false) }
     var useBiometric by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ===== 页面加载时检测无障碍 + 加载设置 =====
+    // 加载设置
     LaunchedEffect(Unit) {
-        accessibilityEnabled = AccessibilityUtils.isAccessibilityEnabled(context, VolumeKeyService::class.java)
         try {
             val resp = RetrofitClient.apiService.getSettings()
             if (resp.isSuccessful) {
                 resp.body()?.let { s ->
                     safePassword = s.safePassword
-                    triggerVolume = s.triggerVolumeKey && accessibilityEnabled
                     triggerVoice = s.triggerVoice
+                    triggerShake = s.triggerShake
                     autoRecord = s.autoRecord
                     autoGps = s.autoGps
                 }
@@ -568,25 +564,6 @@ fun SettingsPanel(
         } catch (_: Exception) {}
         useBiometric = context.getSharedPreferences("auth", Context.MODE_PRIVATE).getBoolean("use_biometric", false)
         loaded = true
-    }
-
-    // ===== 从无障碍设置页返回时重新检测 =====
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                val enabled = AccessibilityUtils.isAccessibilityEnabled(context, VolumeKeyService::class.java)
-                accessibilityEnabled = enabled
-                if (!enabled && triggerVolume) {
-                    // 无障碍被关掉 → 自动关闭按键唤醒
-                    triggerVolume = false
-                    scope.launch {
-                        try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = false)) } catch (_: Exception) {}
-                    }
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LazyColumn(modifier = Modifier.padding(16.dp)) {
@@ -665,69 +642,95 @@ fun SettingsPanel(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("⚙️ 触发方式", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    // 无障碍状态提示
-                    if (!accessibilityEnabled) {
-                        Text(
-                            "⚠️ 按键唤醒需要开启「无障碍服务」，请先开启后再使用",
-                            color = Color(0xFFF59E0B),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    SwitchRow(c, "长按音量键", "锁屏时长按音量键 2 秒触发报警", triggerVolume) { wantOn ->
-                        if (wantOn && !accessibilityEnabled) {
-                            // 未开启无障碍 → 弹出引导对话框
-                            showAccessibilityDialog = true
-                        } else {
-                            triggerVolume = wantOn
-                            scope.launch {
-                                try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVolumeKey = wantOn)) } catch (_: Exception) {}
-                            }
-                        }
-                    }
-                    // 一键测试唤醒按钮（绕过音量键，直接测试唤醒链路）
-                    if (triggerVolume && accessibilityEnabled) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        val toastMsg = remember { mutableStateOf("") }
-                        Button(
-                            onClick = {
-                                try {
-                                    val ctx = context.applicationContext
-                                    val intent = Intent(ctx, EmergencyService::class.java).apply {
-                                        action = EmergencyService.ACTION_TRIGGER
-                                        putExtra(EmergencyService.EXTRA_TRIGGER_SOURCE, "test_button")
-                                    }
-                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                        ctx.startForegroundService(intent)
-                                    } else {
-                                        ctx.startService(intent)
-                                    }
-                                    toastMsg.value = "✅ 已发送唤醒指令，检查通知栏是否有「求救中」"
-                                } catch (e: Exception) {
-                                    toastMsg.value = "❌ 启动失败: ${e.message}"
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = c.errorColor)
-                        ) {
-                            Text("🧪 一键测试唤醒")
-                        }
-                        Text(
-                            "点击直接触发报警流程，测试唤醒链路是否正常",
-                            color = c.onSurfaceVariant,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                        if (toastMsg.value.isNotEmpty()) {
-                            Text(toastMsg.value, color = if (toastMsg.value.startsWith("✅")) Color(0xFF10B981) else c.errorColor, fontSize = 12.sp)
-                        }
-                    }
-                    SwitchRow(c, "语音唤醒", "喊'救救我救命'触发", triggerVoice) {
-                        triggerVoice = it
+                    Text(
+                        "无需无障碍服务，关闭APP也能触发",
+                        color = Color(0xFF10B981),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                    SwitchRow(c, "🎤 语音唤醒", "喊'紫守护救命'触发报警（需麦克风权限）", triggerVoice) { wantOn ->
+                        triggerVoice = wantOn
+                        context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).edit().putBoolean("trigger_voice_enabled", wantOn).apply()
                         scope.launch {
-                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = it)) } catch (_: Exception) {}
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = wantOn)) } catch (_: Exception) {}
+                        }
+                        // 启动或停止语音唤醒服务
+                        val intent = Intent(context, WakeWordService::class.java)
+                        if (wantOn) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.startForegroundService(intent)
+                            } else {
+                                context.startService(intent)
+                            }
+                        } else {
+                            context.stopService(intent)
                         }
                     }
+                    SwitchRow(c, "📳 摇一摇求救", "剧烈摇晃手机3次触发（防误触算法）", triggerShake) { wantOn ->
+                        triggerShake = wantOn
+                        context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).edit().putBoolean("trigger_shake_enabled", wantOn).apply()
+                        scope.launch {
+                            try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerShake = wantOn)) } catch (_: Exception) {}
+                        }
+                        // 启动或停止摇一摇服务
+                        val intent = Intent(context, ShakeService::class.java)
+                        if (wantOn) {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.startForegroundService(intent)
+                            } else {
+                                context.startService(intent)
+                            }
+                        } else {
+                            context.stopService(intent)
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Picovoice AccessKey
+            Card(
+                colors = CardDefaults.cardColors(containerColor = c.cardBg),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("🔑 Picovoice Key", color = c.onSurface, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "语音唤醒需 Picovoice 离线引擎。免费注册获取: console.picovoice.ai",
+                        color = c.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                    )
+                    var accessKey by remember {
+                        mutableStateOf(context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).getString("picovoice_access_key", "") ?: "")
+                    }
+                    OutlinedTextField(
+                        value = accessKey,
+                        onValueChange = { accessKey = it },
+                        label = { Text("AccessKey") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit().putString("picovoice_access_key", accessKey).apply()
+                            if (triggerVoice) {
+                                context.stopService(Intent(context, WakeWordService::class.java))
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    val intent = Intent(context, WakeWordService::class.java)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                        context.startForegroundService(intent)
+                                    } else {
+                                        context.startService(intent)
+                                    }
+                                }, 500)
+                            }
+                        },
+                        modifier = Modifier.padding(top = 8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                    ) { Text("保存并重启唤醒") }
                 }
             }
 
@@ -770,31 +773,6 @@ fun SettingsPanel(
         }
     }
 
-    // ====== 无障碍引导对话框 ======
-    if (showAccessibilityDialog) {
-        AlertDialog(
-            onDismissRequest = { showAccessibilityDialog = false },
-            title = { Text("开启按键唤醒") },
-            text = {
-                Text(
-                    "长按音量键触发报警需要启用「无障碍服务」。\n\n" +
-                    "我们只会检测按键事件，\n" +
-                    "不会读取屏幕内容，不会控制屏幕。\n\n" +
-                    "请点击下方按钮前往设置页面，\n" +
-                    "在「已安装的服务」中找到「紫守护」并开启。"
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showAccessibilityDialog = false
-                    AccessibilityUtils.openAccessibilitySettings(context)
-                }) { Text("前往设置") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAccessibilityDialog = false }) { Text("取消") }
-            }
-        )
-    }
 }
 
 @Composable

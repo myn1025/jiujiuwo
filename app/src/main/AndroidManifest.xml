@@ -78,35 +78,23 @@
             android:foregroundServiceType="location"
             android:exported="false" />
 
-        <!-- 音量键触发服务 (AccessibilityService) — 独立进程，关闭APP不影响按键监听 -->
+        <!-- 语音唤醒服务 (Porcupine) -->
         <service
-            android:name=".service.VolumeKeyService"
-            android:process=":wake"
-            android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+            android:name=".service.WakeWordService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
 
-        <!-- 开机启动接收器 -->
+        <!-- 摇一摇求救服务 -->
+        <service
+            android:name=".service.ShakeService"
+            android:exported="false" />
+
+        <!-- 开机自启（恢复触发服务） -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- 蓝牙耳机按键接收器 -->
-        <receiver
-            android:name=".service.MediaButtonReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </receiver>
 

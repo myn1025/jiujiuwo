@@ -72,6 +72,12 @@ class MainActivity : ComponentActivity() {
         ) {
             missing.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
+        // 录音权限（语音唤醒）
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            missing.add(Manifest.permission.RECORD_AUDIO)
+        }
         if (missing.isNotEmpty()) {
             allPermissionsLauncher.launch(missing.toTypedArray())
         }
