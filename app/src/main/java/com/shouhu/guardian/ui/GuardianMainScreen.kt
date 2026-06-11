@@ -711,8 +711,11 @@ fun SettingsPanel(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    val isRestarting = remember { mutableStateOf(false) }
                     Button(
                         onClick = {
+                            if (isRestarting.value) return@Button
+                            isRestarting.value = true
                             context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
                                 .putString("trigger_keyword", keyword).apply()
                             if (triggerVoice) {
@@ -721,10 +724,17 @@ fun SettingsPanel(
                                 }
                                 context.startService(intent)
                             }
+                            // 8 秒后恢复按钮
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                isRestarting.value = false
+                            }, 8000)
                         },
                         modifier = Modifier.padding(top = 8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
-                    ) { Text("保存并重启唤醒") }
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                        enabled = !isRestarting.value
+                    ) {
+                        Text(if (isRestarting.value) "⏳ 正在配置语音唤醒，请稍候..." else "保存并重启唤醒")
+                    }
                 }
             }
 
