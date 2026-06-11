@@ -7,8 +7,8 @@
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <!-- 主主题 (NoActionBar + NoTitle，彻底防双标题栏) -->
-    <style name="Theme.JiuJiuWo" parent="android:Theme.Material.NoActionBar">
+    <!-- 主主题 (AppCompat NoActionBar — Compose + AppCompatActivity 兼容) -->
+    <style name="Theme.JiuJiuWo" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:colorBackground">@color/dark_background</item>
         <item name="android:statusBarColor">@color/black</item>

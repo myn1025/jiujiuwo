@@ -1,9 +1,11 @@
 package com.shouhu.guardian.ui
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.shouhu.guardian.data.api.RetrofitClient
 import com.shouhu.guardian.data.model.*
 import com.shouhu.guardian.service.EmergencyService
@@ -541,14 +544,23 @@ fun SettingsPanel(
     onToggleTheme: (Boolean) -> Unit
 ) {
     val wakeWordPrefs = LocalContext.current.getSharedPreferences("wake_word", Context.MODE_PRIVATE)
+    val guardianPrefs = LocalContext.current.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE)
     val context = LocalContext.current
     var safePassword by remember { mutableStateOf("2580") }
-    var triggerVoice by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_voice_enabled", false)) }
-    var triggerShake by remember { mutableStateOf(context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).getBoolean("trigger_shake_enabled", false)) }
+    // 🔑 voice switch 初始值优先从实际服务状态反推（服务在监听但 pref 可能是旧的 false）
+    var triggerVoice by remember { mutableStateOf(
+        if (wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") == WakeWordService.STATE_LISTENING) true
+        else guardianPrefs.getBoolean("trigger_voice_enabled", false)
+    )}
+    var triggerShake by remember { mutableStateOf(guardianPrefs.getBoolean("trigger_shake_enabled", false)) }
     var autoRecord by remember { mutableStateOf(true) }
     var autoGps by remember { mutableStateOf(true) }
     var useBiometric by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
+    // 🔑 保存并重启按钮防抖
+    var restartClickedTime by remember { mutableStateOf(0L) }
+    var restartSuccessTime by remember { mutableStateOf(0L) }
+    val restartCooling = (System.currentTimeMillis() - restartClickedTime) < 8000L
     val scope = rememberCoroutineScope()
 
     // 加载设置
@@ -725,6 +737,17 @@ fun SettingsPanel(
                     // 🧪 一键测试触发按钮
                     Spacer(Modifier.height(8.dp))
                     var testClicked by remember { mutableStateOf(false) }
+                    val hasSmsPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                    // 测试前检查短信权限
+                    var showSmsWarning by remember { mutableStateOf(!hasSmsPerm) }
+                    if (showSmsWarning) {
+                        Text(
+                            "⚠️ 短信权限未授予，报警将无法发送短信通知。请到系统设置→权限→短信 中开启",
+                            color = Color(0xFFF59E0B),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                        )
+                    }
                     Button(
                         onClick = {
                             testClicked = true
@@ -799,10 +822,18 @@ fun SettingsPanel(
                                 when (intent?.action) {
                                     WakeWordService.ACTION_READY -> {
                                         restartError.value = null
+                                        restartSuccessTime = System.currentTimeMillis()
+                                        restartClickedTime = 0L  // 🔑 解除防抖
                                         currentServiceState.value = WakeWordService.STATE_LISTENING
+                                        // 🔑 服务就绪后自动同步开关为 ON（首次下载模型后用户不用再点一次）
+                                        if (!triggerVoice) {
+                                            triggerVoice = true
+                                            guardianPrefs.edit().putBoolean("trigger_voice_enabled", true).apply()
+                                        }
                                     }
                                     WakeWordService.ACTION_FAILED -> {
                                         restartError.value = intent.getStringExtra(WakeWordService.EXTRA_ERROR) ?: "初始化失败"
+                                        restartClickedTime = 0L  // 🔑 解除防抖
                                         currentServiceState.value = WakeWordService.STATE_ERROR
                                     }
                                 }
@@ -826,7 +857,8 @@ fun SettingsPanel(
 
                     Button(
                         onClick = {
-                            if (isRestarting) return@Button
+                            if (isRestarting || restartCooling) return@Button
+                            restartClickedTime = System.currentTimeMillis()
                             restartError.value = null
                             // 保存关键词到 SharedPreferences
                             context.getSharedPreferences("wake_word", Context.MODE_PRIVATE).edit()
@@ -844,12 +876,14 @@ fun SettingsPanel(
                         },
                         modifier = Modifier.padding(top = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
-                        enabled = !isRestarting
+                        enabled = !isRestarting && !restartCooling
                     ) {
                         Text(
                             when {
+                                restartCooling -> "⏳ 已请求重启，等待服务响应..."
                                 isRestarting -> "⏳ 正在配置语音唤醒，请稍候..."
                                 restartError.value != null -> "❌ 失败: ${restartError.value}"
+                                restartSuccessTime > 0L && (System.currentTimeMillis() - restartSuccessTime) < 5000L -> "✅ 唤醒已重启成功"
                                 else -> "保存并重启唤醒"
                             }
                         )

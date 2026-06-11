@@ -31,9 +31,9 @@ class ShakeService : Service() {
         const val CHANNEL_ID = "shake_service"
 
         // 检测参数
-        private const val SHAKE_THRESHOLD = 2.0f  // g 力阈值（正常活动<1.5g, 降低到2.0g以提高灵敏度）
+        private const val SHAKE_THRESHOLD = 1.5f  // g 力阈值（正常活动<1.5g, 降低以提高灵敏度）
         private const val SHAKE_WINDOW_MS = 2000L  // 时间窗口
-        private const val SHAKE_COUNT = 3           // 需要多少次摇晃
+        private const val SHAKE_COUNT = 2           // 需要多少次摇晃（降低从3到2提高响应速度）
         private const val COOLDOWN_MS = 5000L       // 冷却期
     }
 

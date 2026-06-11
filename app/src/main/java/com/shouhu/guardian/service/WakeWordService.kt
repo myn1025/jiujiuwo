@@ -66,6 +66,7 @@ class WakeWordService : Service() {
     private var speechService: SpeechService? = null
     private var isListening = false
     private var isForeground = false
+    private var isRestarting = false  // 🔑 防止重复 ACTION_RESTART 导致 SpeechService 崩溃
 
     private var downloadThread: Thread? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -138,6 +139,11 @@ class WakeWordService : Service() {
         when (intent?.action) {
             // 重启监听（关键词变更后）— 只重载关键词 + 重启 SpeechService，不碰 Vosk 实例
             ACTION_RESTART -> {
+                if (isRestarting) {
+                    Log.w(TAG, "ACTION_RESTART 已在处理中，忽略重复请求")
+                    return START_STICKY
+                }
+                isRestarting = true
                 handler.post {
                     stopListening()
                     loadSettings()
@@ -147,7 +153,15 @@ class WakeWordService : Service() {
                         restartSpeechService()
                         writeState(STATE_LISTENING)
                         sendBroadcast(Intent(ACTION_READY))  // 🔑 通知 UI 按钮解锁
+                    } else {
+                        updateNotification("语音唤醒 初始化中", "正在重建识别器...")
+                        try { initRecognizer() } catch (e: Exception) {
+                            Log.e(TAG, "重建识别器失败: ${e.message}")
+                            writeState(STATE_ERROR)
+                            sendBroadcast(Intent(ACTION_FAILED).putExtra(EXTRA_ERROR, e.message))
+                        }
                     }
+                    isRestarting = false
                 }
             }
 

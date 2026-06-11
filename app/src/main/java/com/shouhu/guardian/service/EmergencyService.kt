@@ -121,7 +121,7 @@ class EmergencyService : Service() {
                 startRecording()
 
                 // 3. 发送短信
-                val smsResult = sendSOSMessages(address)
+                val smsResult = sendSOSMessages(address, location)
 
                 // 4. 上报服务器
                 uploadToServer(source, location, address)
@@ -212,10 +212,10 @@ class EmergencyService : Service() {
                 if (hasCoarse) {
                     locationManager?.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, listener, Looper.getMainLooper())
                 }
-                // 8秒超时
+                // 8秒超时 → 15秒（室内GPS冷启动需更长时间）
                 handler.postDelayed({
                     if (!resumed) { resumed = true; cont.resume(null) {} }
-                }, 8000L)
+                }, 15000L)
             } else {
                 Log.e(TAG, "缺少定位权限")
                 cont.resume(null) {}
@@ -248,7 +248,7 @@ class EmergencyService : Service() {
         }
     }
 
-    private suspend fun sendSOSMessages(address: String): String {
+    private suspend fun sendSOSMessages(address: String, location: Location?): String {
         var successCount = 0
         var failCount = 0
         try {
@@ -259,7 +259,11 @@ class EmergencyService : Service() {
             Log.i(TAG, "📋 获取到 ${contacts.size} 个联系人")
 
             contacts.sortedBy { it.priority }.take(5).forEach { contact ->
-                val message = "【SOS】${contact.name}，这是来自紫守护的紧急求救信号！\n📍 位置：$address\n请立即确认对方安全！"
+                // 🔑 构建包含原始坐标和地图链接的完整位置信息
+                val coordInfo = if (location != null) {
+                    "\n🌐 GPS坐标: ${location.latitude}, ${location.longitude}\n🗺️ 地图: https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                } else ""
+                val message = "【SOS】${contact.name}，这是来自紫守护的紧急求救信号！\n📍 位置：$address$coordInfo\n请立即确认对方安全！"
                 try {
                     val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         getSystemService(SmsManager::class.java)
