@@ -733,8 +733,16 @@ fun SettingsPanel(
                             addAction(WakeWordService.ACTION_READY)
                             addAction(WakeWordService.ACTION_FAILED)
                         }
-                        context.registerReceiver(receiver, filter)
-                        onDispose { context.unregisterReceiver(receiver) }
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                            } else {
+                                context.registerReceiver(receiver, filter)
+                            }
+                        } catch (_: Exception) {}
+                        onDispose {
+                            try { context.unregisterReceiver(receiver) } catch (_: Exception) {}
+                        }
                     }
 
                     Button(
