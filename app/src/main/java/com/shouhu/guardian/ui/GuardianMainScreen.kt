@@ -481,7 +481,7 @@ fun AlertsPanel(c: AppColors) {
                 ) { Text("删除", color = Color(0xFFEF4444)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteAlertId = null; deletePwd = ""; deletePwdError = false }) { Text("取消") }
+                TextButton(onClick = { deleteAlertId = null; deletePwd = ""; deletePwdError = null }) { Text("取消") }
             }
         )
     }
