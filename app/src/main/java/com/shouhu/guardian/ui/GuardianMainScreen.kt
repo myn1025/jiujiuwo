@@ -348,6 +348,8 @@ fun AlertsPanel(c: AppColors) {
     var deleteAlertId by remember { mutableStateOf<Int?>(null) }
     var actionLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val prefs = LocalContext.current.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE)
+    val safePassword by remember { mutableStateOf(prefs.getString("safe_password", "2580") ?: "2580") }
 
     // 加载报警记录
     fun loadAlerts() {
