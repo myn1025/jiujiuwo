@@ -9,6 +9,7 @@ import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.shouhu.guardian.R
+import com.shouhu.guardian.ui.MainActivity
 import org.vosk.*
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
@@ -249,7 +250,7 @@ class WakeWordService : Service() {
     private fun buildNotification(title: String, text: String): Notification {
         val pi = PendingIntent.getActivity(
             this, 0,
-            Intent(this, Class.forName("com.shouhu.guardian.ui.MainActivity")),
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)

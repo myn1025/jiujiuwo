@@ -252,9 +252,23 @@ class EmergencyService : Service() {
         var successCount = 0
         var failCount = 0
         try {
+            // 🔑 先检查 SMS 权限
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.e(TAG, "❌ SEND_SMS 权限未授予，无法发送短信")
+                return "❌ 短信权限未开启"
+            }
             val resp = RetrofitClient.apiService.getContacts()
-            if (!resp.isSuccessful) return "获取联系人失败"
-            val contacts = resp.body() ?: return "联系人列表为空"
+            if (!resp.isSuccessful) {
+                Log.e(TAG, "获取联系人失败 HTTP ${resp.code()}")
+                return "❌ 获取联系人失败(${resp.code()})"
+            }
+            val contacts = resp.body()
+            if (contacts.isNullOrEmpty()) {
+                Log.w(TAG, "联系人列表为空，请在APP中添加紧急联系人")
+                return "⚠️ 未设置紧急联系人"
+            }
 
             Log.i(TAG, "📋 获取到 ${contacts.size} 个联系人")
 
@@ -280,10 +294,10 @@ class EmergencyService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "获取联系人失败", e)
-            return "获取联系人失败"
+            Log.e(TAG, "获取联系人异常", e)
+            return "❌ 网络异常，无法获取联系人"
         }
-        return "已通知 $successCount 个联系人" + if (failCount > 0) "（${failCount}个发送失败）" else ""
+        return "✅ 已通知 $successCount 人" + if (failCount > 0) "（${failCount}人失败）" else ""
     }
 
     private suspend fun uploadToServer(source: String, location: Location?, address: String) {

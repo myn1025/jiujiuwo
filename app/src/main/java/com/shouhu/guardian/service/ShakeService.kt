@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.shouhu.guardian.R
+import com.shouhu.guardian.ui.MainActivity
 import kotlin.math.sqrt
 
 /**
@@ -31,8 +32,8 @@ class ShakeService : Service() {
         const val CHANNEL_ID = "shake_service"
 
         // 检测参数
-        private const val SHAKE_THRESHOLD = 1.5f  // g 力阈值（正常活动<1.5g, 降低以提高灵敏度）
-        private const val SHAKE_WINDOW_MS = 2000L  // 时间窗口
+        private const val SHAKE_THRESHOLD = 1.3f  // g 力阈值（正常活动<1.3g, 再次降低以提高灵敏度）
+        private const val SHAKE_WINDOW_MS = 2500L  // 时间窗口加宽到2.5秒
         private const val SHAKE_COUNT = 2           // 需要多少次摇晃（降低从3到2提高响应速度）
         private const val COOLDOWN_MS = 5000L       // 冷却期
     }
@@ -90,7 +91,7 @@ class ShakeService : Service() {
     private fun buildNotification(): Notification {
         val pi = PendingIntent.getActivity(
             this, 0,
-            Intent(this, Class.forName("com.shouhu.guardian.ui.MainActivity")),
+            Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)

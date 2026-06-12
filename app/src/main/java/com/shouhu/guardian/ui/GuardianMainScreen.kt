@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,6 +26,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -420,32 +423,59 @@ fun AlertsPanel(c: AppColors) {
         )
     }
 
-    // 删除确认对话框
+    // 删除确认对话框（需密码）
     if (deleteAlertId != null) {
+        var deletePwd by remember { mutableStateOf("") }
+        var deletePwdError by remember { mutableStateOf(false) }
         AlertDialog(
-            onDismissRequest = { deleteAlertId = null },
+            onDismissRequest = { deleteAlertId = null; deletePwd = ""; deletePwdError = false },
             title = { Text("删除记录") },
-            text = { Text("确定要删除这条报警记录吗？此操作不可撤销。") },
+            text = {
+                Column {
+                    Text("确定要删除这条报警记录吗？此操作不可撤销。")
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = deletePwd,
+                        onValueChange = {
+                            deletePwd = it
+                            deletePwdError = false
+                        },
+                        label = { Text("请输入安全密码") },
+                        singleLine = true,
+                        isError = deletePwdError,
+                        supportingText = if (deletePwdError) {{ Text("密码错误，请重试") }} else null,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
+                        if (deletePwd != safePassword) {
+                            deletePwdError = true
+                            return@TextButton
+                        }
+                        deletePwdError = false
                         scope.launch {
                             actionLoading = true
                             try {
                                 val resp = RetrofitClient.apiService.deleteAlert(deleteAlertId!!)
                                 if (resp.isSuccessful) {
                                     deleteAlertId = null
+                                    deletePwd = ""
                                     loadAlerts()
                                 }
                             } catch (_: Exception) {}
                             actionLoading = false
                         }
                     },
-                    enabled = !actionLoading
+                    enabled = !actionLoading && deletePwd.isNotEmpty()
                 ) { Text("删除", color = Color(0xFFEF4444)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteAlertId = null }) { Text("取消") }
+                TextButton(onClick = { deleteAlertId = null; deletePwd = ""; deletePwdError = false }) { Text("取消") }
             }
         )
     }
@@ -668,8 +698,10 @@ fun SettingsPanel(
                             val state = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
                             val ready = state == WakeWordService.STATE_LISTENING
                             if (!ready) {
-                                triggerVoice = false
-                                // 首次启动 — 触发模型下载
+                                // 🔑 用户想开启，UI 立即反映 intent，由广播确认最终状态
+                                triggerVoice = true
+                                guardianPrefs.edit().putBoolean("trigger_voice_enabled", true).apply()
+                                // 首次启动 — 触发模型下载/初始化
                                 val intent = Intent(context, WakeWordService::class.java)
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                     context.startForegroundService(intent)
@@ -694,12 +726,11 @@ fun SettingsPanel(
                             context.startService(intent)
                         }
                     }
-                    // 模型状态指示（只在不监听且非就绪时显示进度）
+                    // 模型状态指示（模型未就绪时显示进度，不关心开关状态）
                     val modelState = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
                     val showModelStatus = modelState.isNotEmpty()
                             && modelState != WakeWordService.STATE_LISTENING
                             && modelState != "stopped"
-                            && triggerVoice.not()
                     if (showModelStatus) {
                         Text(
                             when (modelState) {
