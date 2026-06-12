@@ -428,9 +428,9 @@ fun AlertsPanel(c: AppColors) {
     // 删除确认对话框（需密码）
     if (deleteAlertId != null) {
         var deletePwd by remember { mutableStateOf("") }
-        var deletePwdError by remember { mutableStateOf(false) }
+        var deletePwdError by remember { mutableStateOf<String?>(null) }
         AlertDialog(
-            onDismissRequest = { deleteAlertId = null; deletePwd = ""; deletePwdError = false },
+            onDismissRequest = { deleteAlertId = null; deletePwd = ""; deletePwdError = null },
             title = { Text("删除记录") },
             text = {
                 Column {
@@ -440,12 +440,12 @@ fun AlertsPanel(c: AppColors) {
                         value = deletePwd,
                         onValueChange = {
                             deletePwd = it
-                            deletePwdError = false
+                            deletePwdError = null
                         },
                         label = { Text("请输入安全密码") },
                         singleLine = true,
-                        isError = deletePwdError,
-                        supportingText = if (deletePwdError) {{ Text("密码错误，请重试") }} else null,
+                        isError = deletePwdError != null,
+                        supportingText = deletePwdError?.let { { Text(it) } },
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         modifier = Modifier.fillMaxWidth()
@@ -455,11 +455,15 @@ fun AlertsPanel(c: AppColors) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (deletePwd != safePassword) {
-                            deletePwdError = true
+                        if (deletePwd.isEmpty()) {
+                            deletePwdError = "请输入安全密码"
                             return@TextButton
                         }
-                        deletePwdError = false
+                        if (deletePwd != safePassword) {
+                            deletePwdError = "密码错误，请重试"
+                            return@TextButton
+                        }
+                        deletePwdError = null
                         scope.launch {
                             actionLoading = true
                             try {
@@ -579,10 +583,9 @@ fun SettingsPanel(
     val guardianPrefs = LocalContext.current.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE)
     val context = LocalContext.current
     var safePassword by remember { mutableStateOf("2580") }
-    // 🔑 voice switch 初始值优先从实际服务状态反推（服务在监听但 pref 可能是旧的 false）
+    // 🔑 voice switch 以 SP 为准（服务状态不可靠，stopListening crash 后 SP 不会更新）
     var triggerVoice by remember { mutableStateOf(
-        if (wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") == WakeWordService.STATE_LISTENING) true
-        else guardianPrefs.getBoolean("trigger_voice_enabled", false)
+        guardianPrefs.getBoolean("trigger_voice_enabled", false)
     )}
     var triggerShake by remember { mutableStateOf(guardianPrefs.getBoolean("trigger_shake_enabled", false)) }
     var autoRecord by remember { mutableStateOf(true) }
@@ -700,25 +703,18 @@ fun SettingsPanel(
                             val state = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
                             val ready = state == WakeWordService.STATE_LISTENING
                             if (!ready) {
-                                // 🔑 用户想开启，UI 立即反映 intent，由广播确认最终状态
-                                triggerVoice = true
-                                guardianPrefs.edit().putBoolean("trigger_voice_enabled", true).apply()
-                                // 首次启动 — 触发模型下载/初始化
-                                val intent = Intent(context, WakeWordService::class.java)
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
+                                // 🔑 模型未就绪，禁止开启，震动反馈并弹 Toast
+                                triggerVoice = false
+                                android.widget.Toast.makeText(context, "请先在下方配置并保存唤醒关键词", android.widget.Toast.LENGTH_SHORT).show()
                                 return@SwitchRow
                             }
                         }
                         triggerVoice = wantOn
-                        context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).edit().putBoolean("trigger_voice_enabled", wantOn).apply()
+                        guardianPrefs.edit().putBoolean("trigger_voice_enabled", wantOn).apply()
                         scope.launch {
                             try { RetrofitClient.apiService.updateSettings(SettingsUpdateRequest(triggerVoice = wantOn)) } catch (_: Exception) {}
                         }
-                        // 🔑 不杀服务 — 用 ACTION_START/STOP_LISTENING 切换（不关 Vosk，避免 JNI 崩溃）
+                        // 🔑 用 ACTION_START/STOP_LISTENING 切换，不关 Vosk 实例
                         val intent = Intent(context, WakeWordService::class.java).apply {
                             action = if (wantOn) WakeWordService.ACTION_START_LISTENING else WakeWordService.ACTION_STOP_LISTENING
                         }
@@ -728,7 +724,7 @@ fun SettingsPanel(
                             context.startService(intent)
                         }
                     }
-                    // 模型状态指示（模型未就绪时显示进度，不关心开关状态）
+                    // 模型状态指示（模型未就绪时显示进度）
                     val modelState = wakeWordPrefs.getString(WakeWordService.PREF_STATE, "") ?: ""
                     val showModelStatus = modelState.isNotEmpty()
                             && modelState != WakeWordService.STATE_LISTENING
@@ -748,7 +744,50 @@ fun SettingsPanel(
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
-                    SwitchRow(c, "📳 摇一摇求救", "剧烈摇晃手机3次触发（防误触算法）", triggerShake) { wantOn ->
+
+                    // 🔍 语音唤醒诊断信息
+                    val lastWakeHit = remember { mutableStateOf(wakeWordPrefs.getLong("last_wake_hit", 0L)) }
+                    val lastWakeWord = remember { mutableStateOf(wakeWordPrefs.getString("last_wake_word", "") ?: "") }
+                    DisposableEffect(Unit) {
+                        val diagReceiver = object : BroadcastReceiver() {
+                            override fun onReceive(ctx: Context?, intent: Intent?) {
+                                if (intent?.action == WakeWordService.ACTION_KEYWORD_HIT) {
+                                    lastWakeHit.value = System.currentTimeMillis()
+                                    lastWakeWord.value = intent.getStringExtra(WakeWordService.EXTRA_KEYWORD) ?: ""
+                                }
+                            }
+                        }
+                        val filter = IntentFilter(WakeWordService.ACTION_KEYWORD_HIT)
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                context.registerReceiver(diagReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                            } else {
+                                context.registerReceiver(diagReceiver, filter)
+                            }
+                        } catch (_: Exception) {}
+                        onDispose { try { context.unregisterReceiver(diagReceiver) } catch (_: Exception) {} }
+                    }
+                    if (modelState == WakeWordService.STATE_LISTENING || modelState == "stopped") {
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(
+                                if (modelState == WakeWordService.STATE_LISTENING) "🎤 监听中" else "⏸ 已暂停",
+                                color = if (modelState == WakeWordService.STATE_LISTENING) Color(0xFF10B981) else Color(0xFF6B7280),
+                                fontSize = 11.sp
+                            )
+                            if (lastWakeHit.value > 0L) {
+                                val ago = (System.currentTimeMillis() - lastWakeHit.value) / 1000
+                                Text(
+                                    "上次命中: ${if (ago < 60) "${ago}秒前" else "${ago/60}分钟前"} \"${lastWakeWord.value}\"",
+                                    color = Color(0xFF10B981),
+                                    fontSize = 11.sp
+                                )
+                            } else {
+                                Text("未命中过关键词", color = Color(0xFF9CA3AF), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    SwitchRow(c, "📳 摇一摇求救", "剧烈摇晃手机${ShakeService.SHAKE_COUNT}次触发（防误触算法）", triggerShake) { wantOn ->
                         triggerShake = wantOn
                         context.getSharedPreferences("guardian_prefs", Context.MODE_PRIVATE).edit().putBoolean("trigger_shake_enabled", wantOn).apply()
                         scope.launch {
@@ -764,6 +803,44 @@ fun SettingsPanel(
                             }
                         } else {
                             context.stopService(intent)
+                        }
+                    }
+
+                    // 🔍 摇一摇诊断 — 实时 gForce 读数
+                    val lastShakeG = remember { mutableStateOf(0f) }
+                    val lastShakeTime = remember { mutableStateOf(0L) }
+                    DisposableEffect(Unit) {
+                        val shakeDiagReceiver = object : BroadcastReceiver() {
+                            override fun onReceive(ctx: Context?, intent: Intent?) {
+                                if (intent?.action == ShakeService.ACTION_DIAG) {
+                                    lastShakeG.value = intent.getFloatExtra(ShakeService.EXTRA_GFORCE, 0f)
+                                    lastShakeTime.value = System.currentTimeMillis()
+                                }
+                            }
+                        }
+                        val filter = IntentFilter(ShakeService.ACTION_DIAG)
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                context.registerReceiver(shakeDiagReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                            } else {
+                                context.registerReceiver(shakeDiagReceiver, filter)
+                            }
+                        } catch (_: Exception) {}
+                        onDispose { try { context.unregisterReceiver(shakeDiagReceiver) } catch (_: Exception) {} }
+                    }
+                    if (triggerShake) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("📳 传感器活跃", color = Color(0xFF10B981), fontSize = 11.sp)
+                            if (lastShakeTime.value > 0L) {
+                                val ago = (System.currentTimeMillis() - lastShakeTime.value) / 1000
+                                Text(
+                                    "上次g力: ${String.format("%.2f", lastShakeG.value)}g (${if (ago < 60) "${ago}秒前" else "${ago/60}分钟前"})",
+                                    color = if (lastShakeG.value >= 1.3f) Color(0xFFEF4444) else Color(0xFFF59E0B),
+                                    fontSize = 11.sp
+                                )
+                            } else {
+                                Text("摇晃手机查看g力读数", color = Color(0xFF9CA3AF), fontSize = 11.sp)
+                            }
                         }
                     }
 
@@ -856,13 +933,9 @@ fun SettingsPanel(
                                     WakeWordService.ACTION_READY -> {
                                         restartError.value = null
                                         restartSuccessTime = System.currentTimeMillis()
-                                        restartClickedTime = 0L  // 🔑 解除防抖
+                                        restartClickedTime = 0L
                                         currentServiceState.value = WakeWordService.STATE_LISTENING
-                                        // 🔑 服务就绪后自动同步开关为 ON（首次下载模型后用户不用再点一次）
-                                        if (!triggerVoice) {
-                                            triggerVoice = true
-                                            guardianPrefs.edit().putBoolean("trigger_voice_enabled", true).apply()
-                                        }
+                                        // 不再自动改 triggerVoice，由用户手动打开
                                     }
                                     WakeWordService.ACTION_FAILED -> {
                                         restartError.value = intent.getStringExtra(WakeWordService.EXTRA_ERROR) ?: "初始化失败"

@@ -1,13 +1,16 @@
 package com.shouhu.guardian.service
 
 import android.Manifest
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
@@ -46,11 +49,38 @@ class EmergencyService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var currentLevel = 1
+    private var smsSentCount = 0
+    private var smsFailCount = 0
+
+    // SMS 发送结果广播接收器（确认短信是否真正发出）
+    private val smsSentReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            val phone = intent?.getStringExtra("phone") ?: "未知"
+            when (resultCode) {
+                Activity.RESULT_OK -> {
+                    Log.i(TAG, "✅ SMS 已送达至 $phone")
+                }
+                else -> {
+                    smsFailCount++
+                    Log.w(TAG, "⚠ SMS 发送失败至 $phone, resultCode=$resultCode")
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        // 注册 SMS 发送结果监听
+        val sentFilter = IntentFilter(SMS_SENT_ACTION)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(smsSentReceiver, sentFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(smsSentReceiver, sentFilter)
+            }
+        } catch (_: Exception) {}
         Log.i(TAG, "EmergencyService 已创建")
     }
 
@@ -285,9 +315,23 @@ class EmergencyService : Service() {
                         @Suppress("DEPRECATION")
                         SmsManager.getDefault()
                     }
-                    smsManager.sendTextMessage(contact.phone, null, message, null, null)
+                    // 🔑 构建 sentIntent 确认短信是否真正发送
+                    val sentPi = PendingIntent.getBroadcast(
+                        this, contact.id.toInt(),
+                        Intent(SMS_SENT_ACTION).apply { putExtra("phone", contact.phone) },
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT
+                    )
+                    // 🔑 API 31+ 用 sendTextMessageWithoutPersisting 绕过系统 SMS 同意弹窗
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        smsManager.sendTextMessageWithoutPersisting(contact.phone, null, message, sentPi, null)
+                    } else {
+                        smsManager.sendTextMessage(contact.phone, null, message, sentPi, null)
+                    }
                     successCount++
-                    Log.i(TAG, "📩 短信已发送至 ${contact.name}(${contact.phone})")
+                    Log.i(TAG, "📩 短信已提交至 ${contact.name}(${contact.phone})")
+                } catch (e: SecurityException) {
+                    failCount++
+                    Log.e(TAG, "短信发送被安全策略阻止: ${contact.phone}", e)
                 } catch (e: Exception) {
                     failCount++
                     Log.e(TAG, "短信发送失败: ${contact.phone}", e)
@@ -333,6 +377,7 @@ class EmergencyService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
+        try { unregisterReceiver(smsSentReceiver) } catch (_: Exception) {}
         try { mediaRecorder?.release() } catch (_: Exception) {}
         mediaRecorder = null
     }
@@ -380,5 +425,6 @@ class EmergencyService : Service() {
         const val ACTION_TRIGGER = "com.shouhu.guardian.TRIGGER"
         const val ACTION_CANCEL = "com.shouhu.guardian.CANCEL"
         const val EXTRA_TRIGGER_SOURCE = "trigger_source"
+        const val SMS_SENT_ACTION = "com.shouhu.guardian.SMS_SENT"
     }
 }

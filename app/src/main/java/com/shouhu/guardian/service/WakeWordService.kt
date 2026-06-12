@@ -60,6 +60,10 @@ class WakeWordService : Service() {
         const val ACTION_DOWNLOAD_CANCEL = "com.shouhu.guardian.action.DOWNLOAD_CANCEL"
         private const val NOTIFICATION_ID_PROMPT = 2003
         private const val MODEL_SIZE_MB = 42
+
+        // 诊断广播（通知 UI 关键词命中）
+        const val ACTION_KEYWORD_HIT = "com.shouhu.guardian.action.KEYWORD_HIT"
+        const val EXTRA_KEYWORD = "keyword"
     }
 
     private var model: Model? = null
@@ -448,9 +452,11 @@ class WakeWordService : Service() {
     }
 
     private fun restartSpeechService() {
-        if (!isListening || recognizer == null) return
+        // 🔑 只用 recognizer 判断，不用 isListening（stopListening 后 isListening=false）
+        if (recognizer == null) return
         speechService = SpeechService(recognizer!!, SAMPLE_RATE.toFloat())
         speechService?.startListening(recognitionListener)
+        isListening = true
     }
 
     private fun stopListening() {
@@ -470,6 +476,15 @@ class WakeWordService : Service() {
             for (word in wakeWords) {
                 if (text.contains(word)) {
                     Log.w(TAG, "⚡ 检测到唤醒词 '$word' 在 \"$text\"")
+                    // 🔍 保存命中记录到 SP，供 UI 诊断面板读取
+                    getSharedPreferences("wake_word", MODE_PRIVATE).edit()
+                        .putLong("last_wake_hit", System.currentTimeMillis())
+                        .putString("last_wake_word", word)
+                        .apply()
+                    // 🔍 广播通知 UI 诊断面板
+                    sendBroadcast(Intent(ACTION_KEYWORD_HIT).apply {
+                        putExtra(EXTRA_KEYWORD, word)
+                    })
                     handler.post { triggerEmergency() }
                     return
                 }

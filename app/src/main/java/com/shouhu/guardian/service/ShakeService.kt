@@ -31,11 +31,15 @@ class ShakeService : Service() {
         const val NOTIFICATION_ID = 2003
         const val CHANNEL_ID = "shake_service"
 
-        // 检测参数
-        private const val SHAKE_THRESHOLD = 1.3f  // g 力阈值（正常活动<1.3g, 再次降低以提高灵敏度）
-        private const val SHAKE_WINDOW_MS = 2500L  // 时间窗口加宽到2.5秒
-        private const val SHAKE_COUNT = 2           // 需要多少次摇晃（降低从3到2提高响应速度）
-        private const val COOLDOWN_MS = 5000L       // 冷却期
+        // 检测参数（public 供 UI 诊断面板读取）
+        const val SHAKE_THRESHOLD = 1.3f  // g 力阈值
+        const val SHAKE_WINDOW_MS = 2500L  // 时间窗口
+        const val SHAKE_COUNT = 2           // 摇晃次数
+        private const val COOLDOWN_MS = 5000L
+
+        // 诊断广播（每 5 秒发一次 gForce 给 UI）
+        const val ACTION_DIAG = "com.shouhu.guardian.action.SHAKE_DIAG"
+        const val EXTRA_GFORCE = "gForce"
     }
 
     private var sensorManager: SensorManager? = null
@@ -138,9 +142,13 @@ class ShakeService : Service() {
         val gForce = sqrt((x * x + y * y + z * z).toDouble()).toFloat() / SensorManager.GRAVITY_EARTH
         val now = System.currentTimeMillis()
 
-        // 每 5 秒输出一次 debug 日志，确认传感器在工作
+        // 每 5 秒输出一次 debug 日志 + 诊断广播，确认传感器在工作
         if (now % 5000 < 20) {
             Log.d(TAG, "传感器活跃 — gForce=${"%.2f".format(gForce)} x=${"%.1f".format(x)} y=${"%.1f".format(y)} z=${"%.1f".format(z)}")
+            // 🔍 发送 gForce 读数给 UI 诊断面板
+            try {
+                sendBroadcast(Intent(ACTION_DIAG).apply { putExtra(EXTRA_GFORCE, gForce) })
+            } catch (_: Exception) {}
         }
 
         // 低于阈值：忽略
